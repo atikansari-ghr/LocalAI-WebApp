@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "checkedAt": "2026-10-18",
+  "platform": "linux-x64",
+  "qualification": "pending-real-target-tests",
+  "assets": [
+    {
+      "id": "llama-cpu",
+      "kind": "runtime",
+      "version": "b11669",
+      "filename": "llama-b11669-bin-ubuntu-x64.tar.gz",
+      "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11669/llama-b11669-bin-ubuntu-x64.tar.gz",
+      "bytes": 17851611,
+      "sha256": "cf07c1c112d709bd67e522017471de57ed0ec8bea031d732c5422351c07f65ac",
+      "license": "MIT",
+      "licenseUrl": "https://github.com/ggml-org/llama.cpp/blob/620d2225cc436ab0b001e3200e590e3b286ef9ab/LICENSE",
+      "source": "https://api.github.com/repos/ggml-org/llama.cpp/releases/tags/b11669"
+    },
+    {
+      "id": "chat",
+      "kind": "model",
+      "task": "chat",
+      "modelId": "localai-chat",
+      "repository": "Qwen/Qwen3-4B-GGUF",
+      "revision": "bc640142c66e1fdd12af0bd68f40445458f3869b",
+      "quantization": "Q4_K_M",
+      "contextTokens": 4096,
+      "filename": "Qwen3-4B-Q4_K_M.gguf",
+      "url": "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/bc640142c66e1fdd12af0bd68f40445458f3869b/Qwen3-4B-Q4_K_M.gguf",
+      "bytes": 2497280256,
+      "sha256": "7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5",
+      "license": "Apache-2.0",
+      "licenseUrl": "https://huggingface.co/Qwen/Qwen3-4B-GGUF/blob/bc640142c66e1fdd12af0bd68f40445458f3869b/LICENSE",
+      "source": "https://huggingface.co/api/models/Qwen/Qwen3-4B-GGUF?blobs=true"
+    },
+    {
+      "id": "embedding",
+      "kind": "model",
+      "task": "embeddings",
+      "modelId": "localai-embedding",
+      "repository": "Qwen/Qwen3-Embedding-0.6B-GGUF",
+      "revision": "370f27d7550e0def9b39c1f16d3fbaa13aa67728",
+      "quantization": "Q8_0",
+      "contextTokens": 2048,
+      "filename": "Qwen3-Embedding-0.6B-Q8_0.gguf",
+      "url": "https://huggingface.co/Qwen/Qwen3-Embedding-0.6B-GGUF/resolve/370f27d7550e0def9b39c1f16d3fbaa13aa67728/Qwen3-Embedding-0.6B-Q8_0.gguf",
+      "bytes": 639150592,
+      "sha256": "06507c7b42688469c4e7298b0a1e16deff06caf291cf0a5b278c308249c3e439",
+      "license": "Apache-2.0",
+      "licenseUrl": "https://huggingface.co/Qwen/Qwen3-Embedding-0.6B-GGUF/blob/370f27d7550e0def9b39c1f16d3fbaa13aa67728/README.md",
+      "source": "https://huggingface.co/api/models/Qwen/Qwen3-Embedding-0.6B-GGUF?blobs=true"
+    }
+  ]
+}

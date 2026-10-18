@@ -11,10 +11,17 @@ import { createServer as createHttpServer } from 'node:http';
 import { createGateway } from '../apps/gateway/server.mjs';
 import { openState } from '../packages/database/index.mjs';
 import { loadConfig } from '../packages/shared/config.mjs';
-import { readInstallationConfig, backupInstallation, probeGateway, prepareConfiguration, publishConfiguration } from '../installer/lifecycle.mjs';
+import { readInstallationConfig, backupInstallation, probeGateway, probeGatewayRuntime,prepareConfiguration, publishConfiguration } from '../installer/lifecycle.mjs';
 import { applyActivation, restoreActivation, commitActivation } from '../installer/activation.mjs';
 
 function fixture(t){const d=mkdtempSync(join(tmpdir(),'localai-install-'));t.after(()=>rmSync(d,{recursive:true,force:true}));return d;}
+test('activation checks gateway runtime readiness without accepting a false production-ready response',async t=>{
+ let blockers=['release_not_qualified'],status=503;
+ const server=createHttpServer((req,res)=>{assert.equal(req.url,'/health/ready');res.writeHead(status,{'Content-Type':'application/json'});res.end(JSON.stringify({status:'not_ready',blockers}));});server.listen(0,'127.0.0.1');await once(server,'listening');t.after(()=>new Promise(resolve=>server.close(resolve)));
+ const config={host:'127.0.0.1',port:server.address().port,transport:'loopback'};assert.equal(await probeGatewayRuntime(config),true);
+ for(const blocker of ['runtime_not_provisioned','runtime_unavailable','state_unavailable']){blockers=[blocker,'release_not_qualified'];assert.equal(await probeGatewayRuntime(config),false);}
+ blockers=[];status=200;assert.equal(await probeGatewayRuntime(config),false);
+});
 
 test('operator tools execute and reject invalid calls through deployment symlinks',{skip:process.platform==='win32'?'Deployment symlinks are exercised on Linux':false},t=>{
  const dir=fixture(t);

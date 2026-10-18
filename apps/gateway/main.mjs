@@ -8,6 +8,8 @@ import { openVault,initializeVault } from '../../packages/auth/crypto.mjs';
 import { createAuthService } from '../../packages/auth/service.mjs';
 import { createApplicationService } from '../../packages/auth/applications.mjs';
 import { createPasskeyService } from '../../packages/auth/passkeys.mjs';
+import { loadQualifiedInference } from '../../services/inference/qualification.mjs';
+import { fileURLToPath } from 'node:url';
 
 process.umask(0o077);
 let state, server,repo;
@@ -19,7 +21,8 @@ try {
     repo=openSecurityRepository(join(config.stateDir,'platform.sqlite'));
     const keyPath=join(config.stateDir,'master.key'),vault=existsSync(keyPath)?openVault(keyPath):initializeVault(keyPath,{encryptedStateExists:repo.hasEncryptedState()});
     const auth=createAuthService({repo,vault}),apps=createApplicationService({repo,auth}),passkeys=createPasskeyService({repo,auth,origin:config.origin,rpId:new URL(config.origin).hostname});
-    services={repo,vault,auth,apps,passkeys};
+    const inference=loadQualifiedInference({sourceRoot:fileURLToPath(new URL('../..',import.meta.url)),onFallback:event=>repo.audit(Date.now(),'inference_fallback',null,event.to,event.reason)});
+    services={repo,vault,auth,apps,passkeys,inference};
   }
   const closeState=()=>{repo?.close();state.close();};
   server=createGateway({state,config,...services});

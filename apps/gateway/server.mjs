@@ -9,7 +9,7 @@ export function createGateway({ state,config,...services }) {
   const options={requestTimeout:10000,headersTimeout:10000,keepAliveTimeout:2000,maxHeaderSize:8192};
   const factory=config?.transport==='tls'?createTlsServer:createServer;
   if(config?.transport==='tls')Object.assign(options,{cert:readFileSync(config.tlsCert),key:readFileSync(config.tlsKey),minVersion:'TLSv1.2'});
-  return factory(options, (request, response) => {
+  return factory(options, async (request, response) => {
     if(!['/health/live','/health/ready'].includes(request.url)&&browser)return browser(request,response);
     response.setHeader('Content-Type','application/json; charset=utf-8');
     response.setHeader('Cache-Control','no-store');
@@ -26,7 +26,8 @@ export function createGateway({ state,config,...services }) {
     if (request.url === '/health/live') return send(200,{status:'alive',pid:process.pid});
     try {
       if (!state.health().ok) throw new Error('State unavailable');
-      return send(503,{status:'not_ready',blockers:[...(services.auth?.status()==='ready'?[]:[browser?'setup_required':'setup_not_implemented']),'runtime_not_provisioned','release_not_qualified']});
+      const runtimeBlockers=services.inference?(await services.inference.health()?[]:['runtime_unavailable']):['runtime_not_provisioned'];
+      return send(503,{status:'not_ready',blockers:[...(services.auth?.status()==='ready'?[]:[browser?'setup_required':'setup_not_implemented']),...runtimeBlockers,'release_not_qualified']});
     } catch {
       return send(503,{status:'not_ready',blockers:['state_unavailable']});
     }
