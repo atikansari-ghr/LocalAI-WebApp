@@ -1,0 +1,15 @@
+{
+  "name": "localai-webapp",
+  "version": "0.1.0-preview.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.19.0 <25"
+  },
+  "scripts": {
+    "test": "node --test --test-concurrency=1",
+    "check:docs": "node scripts/check-docs.mjs",
+    "start": "node apps/gateway/main.mjs",
+    "release:check": "node scripts/release-gate.mjs"
+  }
+}
