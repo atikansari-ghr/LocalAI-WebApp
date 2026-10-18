@@ -1,5 +1,5 @@
 """Offline CPU benchmark for an isolated, hash-pinned synthetic OCR candidate."""
-import gc,hashlib,json,math,os,re,time
+import gc,hashlib,json,math,os,platform,time
 from pathlib import Path
 from importlib.metadata import version
 
@@ -42,5 +42,5 @@ for sample,model_name,expected in [('english','en_PP-OCRv5_mobile_rec','LOCAL AI
         gc.collect()
     except Exception as error:
         results.append(dict(language=sample,elapsedMs=round((time.monotonic()-started)*1000),exactTextPassed=False,error=type(error).__name__,detail=str(error)[:2000]))
-print(json.dumps(dict(scope='isolated-ocr-candidate',engine='PaddleOCR',version='3.7.0',framework='3.3.1',python=version('paddlepaddle'),cpuOnly=True,actuallyTested=['en','ar'],results=results,activated=False,fullOcrGate='blocked'),ensure_ascii=False))
+print(json.dumps(dict(scope='isolated-ocr-candidate',engine='PaddleOCR',version='3.7.0',framework='3.3.1',python=platform.python_version(),cpuOnly=True,actuallyTested=['en','ar'],results=results,activated=False,fullOcrGate='blocked'),ensure_ascii=False))
 assert all(result['exactTextPassed'] for result in results),'Strict native PaddleOCR benchmark failed; preserve the failed gate'
