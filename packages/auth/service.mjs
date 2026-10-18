@@ -61,6 +61,28 @@ export function createAuthService({repo,vault,now=Date.now}){
     return sessionResult(session,account);
    }catch{repo.audit(now(),'login',user.id,user.id,'denied');throw new AuthError();}
   },
+  async beginTotpRotation(token,csrf,{password,code,recoveryCode,ip}){
+   const current=service.session(token);if(!equalSecret(current.csrf,csrf))throw new AuthError();
+   const proof=await service.login({username:current.user.username,password,code,recoveryCode,ip});
+   try{
+    if(service.session(token).user.id!==proof.user.id)throw new AuthError();
+    const id=newToken(),secret=newTotpSecret();
+    repo.saveChallenge({id,userId:proof.user.id,kind:'totp_rotation',challenge:vault.seal(secret,'totp-replacement:'+proof.user.id),expires:now()+5*60000,sessionHash:tokenDigest(proof.token)},now());
+    service.logout(token);
+    return {...proof,id,totpSecret:secret,otpauthUri:'otpauth://totp/Local%20AI:'+encodeURIComponent(proof.user.username)+'?secret='+secret+'&issuer=Local%20AI&algorithm=SHA1&digits=6&period=30'};
+   }catch{try{service.logout(proof.token);}catch{}throw new AuthError();}
+  },
+  completeTotpRotation(token,csrf,id,code,ip){
+   rate('totp_rotation',ip);const user=service.requireFreshSession(token,csrf);guardAccount(user.id);
+   try{
+    const recoveryCodes=Array.from({length:10},newToken),session=prepareSession();
+    const account=repo.replaceTotp({userId:user.id,proofHash:tokenDigest(token),challengeId:id,verifyChallenge:encrypted=>{
+     const secret=vault.open(encrypted,'totp-replacement:'+user.id),counter=verifyTotp(secret,code,now());
+     return counter===null?null:{secret:vault.seal(secret,'totp:'+user.id),counter};
+    },recoveryHashes:recoveryCodes.map(c=>tokenDigest('recovery:'+c)),session,now:now()});
+    repo.clearRate(accountKey(user.id));return {...sessionResult(session,account),recoveryCodes};
+   }catch{repo.audit(now(),'authenticator_replacement',user.id,user.id,'denied');throw new AuthError();}
+  },
   session(token){
    if(typeof token!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(token))throw new AuthError();
    const session=repo.session(tokenDigest(token),now(),IDLE_TTL);if(!session)throw new AuthError();

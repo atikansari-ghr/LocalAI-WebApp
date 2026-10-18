@@ -92,6 +92,8 @@ export function createBrowserHandler({config,repo,auth,apps,passkeys,vault}){
    if(path==='/auth/login'){fields(body,['username','password','code','recoveryCode']);return establish(await auth.login({...body,ip}));}
    if(path==='/auth/logout'){fields(body,[]);auth.logout(sessionToken);setCookie(response,SESSION,'',0);return send(200,{ok:true});}
    if(path==='/auth/step-up'){fields(body,['code']);auth.stepUp(sessionToken,request.headers['x-csrf-token'],body.code,ip);return send(200,{ok:true});}
+   if(path==='/auth/totp/replace/begin'){fields(body,['password','code','recoveryCode']);return establish(await auth.beginTotpRotation(sessionToken,request.headers['x-csrf-token'],{...body,ip}));}
+   if(path==='/auth/totp/replace/complete'){fields(body,['id','code']);return establish(auth.completeTotpRotation(sessionToken,request.headers['x-csrf-token'],body.id,body.code,ip));}
    if(path==='/auth/passkeys/register/options'){fields(body,[]);return send(200,await passkeys.registrationOptions(sessionToken,request.headers['x-csrf-token']));}
    if(path==='/auth/passkeys/register/verify'){fields(body,['id','response','name']);return send(200,await passkeys.register(sessionToken,request.headers['x-csrf-token'],body.id,body.response,body.name));}
    if(path==='/auth/passkeys/rename'){fields(body,['id','name']);return send(200,passkeys.rename(sessionToken,request.headers['x-csrf-token'],body.id,body.name));}

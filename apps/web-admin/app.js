@@ -7,6 +7,9 @@ Object.assign(dictionaries.en,{deviceName:'Device name (optional)',deviceNameHel
 Object.assign(dictionaries.ar,{deviceName:'اسم الجهاز (اختياري)',deviceNameHelp:'مثلاً: هاتفي أو حاسوب العمل. حتى ٨٠ حرفاً. هذا اسم تعريفي؛ قد يعمل مفتاح المرور المتزامن على عدة أجهزة.',unnamedPasskey:'مفتاح مرور بدون اسم',renameDevice:'اسم الجهاز',saveName:'حفظ الاسم'});
 Object.assign(dictionaries.en,{invalidDeviceName:'Use up to 80 characters without control characters.'});
 Object.assign(dictionaries.ar,{invalidDeviceName:'استخدم حتى ٨٠ حرفاً بدون محارف تحكم.'});
+Object.assign(dictionaries.en,{replaceAuthenticator:'Replace authenticator',replaceWarning:'After you verify the new authenticator, the previous authenticator and recovery codes stop working and other sessions sign out.',replaceProof:'Confirm your password and a fresh authenticator code, or use an unused recovery code. A recovery code used here is consumed.',replaceConfirm:'Verify new authenticator',replacePending:'Add this secret to your new authenticator. Nothing is replaced until its code is verified. Complete within five minutes.',cancel:'Cancel'});
+Object.assign(dictionaries.ar,{replaceAuthenticator:'استبدال تطبيق المصادقة',replaceWarning:'بعد التحقق من تطبيق المصادقة الجديد تتوقف رموز التطبيق السابق ورموز الاسترداد السابقة وتُسجّل الجلسات الأخرى خروجها.',replaceProof:'أكد كلمة المرور ورمز مصادقة جديداً أو استخدم رمز استرداد غير مستخدم. يُستهلك رمز الاسترداد المستخدم هنا.',replaceConfirm:'التحقق من تطبيق المصادقة الجديد',replacePending:'أضف هذا المفتاح إلى تطبيق المصادقة الجديد. لا يتم الاستبدال حتى يُتحقق من رمزه. أكمل خلال خمس دقائق.',cancel:'إلغاء'});
+let totpReplacement=null,totpReplacementForm=false,replacementUsesRecovery=false;
 let language=localStorage.getItem('localai.language')==='ar'?'ar':'en',theme=localStorage.getItem('localai.theme')||'light',csrf='',session=null,stage=null,useRecovery=false;
 const $=id=>document.getElementById(id),t=key=>dictionaries[language][key]||dictionaries.en[key]||key;
 function notice(message){$('notice').textContent=message;setTimeout(()=>{$('notice').textContent='';},8000);}
@@ -80,12 +83,30 @@ async function renderProfile(){
  $('content').innerHTML='<h1>'+t('security')+'</h1><p class="muted" id="session-expiry"></p><div class="columns"><section class="panel"><h2>'+t('verify')+'</h2><p class="muted">'+t('verifyText')+'</p><form id="step-up">'+field('code','code','text','inputmode="numeric" pattern="[0-9]{6}" autocomplete="one-time-code" maxlength="6"')+'<button class="primary" type="submit">'+t('verify')+'</button></form></section><section class="panel"><h2>'+t('passkeys')+'</h2><p class="muted">'+t('passkeyText')+'</p><button class="primary" id="add-passkey">'+t('addPasskey')+'</button><div id="passkey-list" class="toolbar"></div><a href="/docs?guide=security">'+t('help')+'</a></section></div><button id="mobile-logout" class="secondary">'+t('logout')+'</button>';
  $('session-expiry').textContent=t('session')+': '+new Intl.DateTimeFormat(language,{dateStyle:'medium',timeStyle:'short'}).format(new Date(session.expires));
  $('mobile-logout').onclick=async()=>{try{await api('/auth/logout',{});location.assign('/login');}catch(e){notice(e.message);}};
+ const replacementPanel=document.createElement('section');replacementPanel.className='panel';replacementPanel.id='totp-replacement';$('mobile-logout').before(replacementPanel);renderTotpReplacement();
  form('step-up',async data=>{await api('/auth/step-up',{code:data.get('code')});notice(t('saved'));});
  const deviceLabel=document.createElement('label');deviceLabel.textContent=t('deviceName');
  const deviceName=document.createElement('input');deviceName.id='passkey-device-name';deviceName.dir='auto';deviceName.autocomplete='off';deviceName.setAttribute('aria-describedby','passkey-device-help');
  const deviceHelp=document.createElement('small');deviceHelp.id='passkey-device-help';deviceHelp.className='hint';deviceHelp.textContent=t('deviceNameHelp');deviceLabel.append(deviceName,deviceHelp);$('add-passkey').before(deviceLabel);
  $('add-passkey').onclick=async()=>{const button=$('add-passkey');button.disabled=true;try{if(!window.PublicKeyCredential)throw new Error(t('unsupported'));const name=readDeviceName(deviceName);const options=await api('/auth/passkeys/register/options',{});const credential=await navigator.credentials.create({publicKey:decodeOptions(options.options,true)});await api('/auth/passkeys/register/verify',{id:options.id,response:serialize(credential),name});deviceName.value='';notice(t('saved'));await passkeyList();}catch(e){notice(e.message||t('failed'));}finally{button.disabled=false;}};
  try{await passkeyList();}catch(e){notice(e.message);}
+}
+function renderTotpReplacement(){
+ const panel=$('totp-replacement');
+ const heading='<h2>'+t('replaceAuthenticator')+'</h2><p class="muted">'+t('replaceWarning')+'</p>';
+ if(totpReplacement){
+  panel.innerHTML=heading+'<p>'+t('replacePending')+'</p><label>'+t('secret')+'<span id="replacement-secret" class="secret"></span></label><form id="totp-complete">'+field('code','code','text','inputmode="numeric" pattern="[0-9]{6}" autocomplete="one-time-code" maxlength="6"')+'<button class="primary" type="submit">'+t('replaceConfirm')+'</button></form><button class="secondary" id="cancel-replacement">'+t('cancel')+'</button>';
+  $('replacement-secret').textContent=totpReplacement.secret;
+  form('totp-complete',async data=>{const value=await api('/auth/totp/replace/complete',{id:totpReplacement.id,code:data.get('code')});session=value;totpReplacement=null;totpReplacementForm=false;stage={kind:'recovery',codes:value.recoveryCodes};render();});
+ }else if(totpReplacementForm){
+  panel.innerHTML=heading+'<p>'+t('replaceProof')+'</p><button class="secondary" id="replacement-factor">'+t(replacementUsesRecovery?'useCode':'useRecovery')+'</button><form id="totp-proof">'+field('password','password','password','autocomplete="current-password"')+field(replacementUsesRecovery?'recoveryCode':'code',replacementUsesRecovery?'recovery':'code','text',replacementUsesRecovery?'autocomplete="off" spellcheck="false"':'inputmode="numeric" pattern="[0-9]{6}" autocomplete="one-time-code" maxlength="6"')+'<button class="primary" type="submit">'+t('continue')+'</button></form><button class="secondary" id="cancel-replacement">'+t('cancel')+'</button>';
+  $('replacement-factor').onclick=()=>{replacementUsesRecovery=!replacementUsesRecovery;renderTotpReplacement();};
+  form('totp-proof',async data=>{const value=await api('/auth/totp/replace/begin',Object.fromEntries(data));session={user:value.user,csrf:value.csrf,expires:value.expires};totpReplacement={id:value.id,secret:value.totpSecret};await renderProfile();});
+ }else{
+  panel.innerHTML=heading+'<button class="secondary" id="start-replacement">'+t('replaceAuthenticator')+'</button>';
+  $('start-replacement').onclick=()=>{totpReplacementForm=true;renderTotpReplacement();};return;
+ }
+ $('cancel-replacement').onclick=()=>{totpReplacement=null;totpReplacementForm=false;renderTotpReplacement();};
 }
 async function passkeyList(){
  const {passkeys}=await api('/auth/passkeys');$('passkey-list').replaceChildren();

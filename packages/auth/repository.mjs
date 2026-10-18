@@ -77,6 +77,21 @@ export function openSecurityRepository(path){
    db.prepare('UPDATE sessions SET step_up=? WHERE token_hash=?').run(now,hash);
    audit(now,'step_up',user.id,user.id,'success');
   });},
+  replaceTotp({userId,proofHash,challengeId,verifyChallenge,recoveryHashes,session,now}){return transaction(()=>{
+   const proof=db.prepare('SELECT * FROM sessions WHERE token_hash=? AND user_id=?').get(proofHash,userId),user=userById(userId);
+   if(!proof||proof.expires<=now||proof.last_seen+30*60000<=now||proof.step_up+5*60000<now||user?.status!=='active')throw new Error('Fresh proof required');
+   const challenge=db.prepare('SELECT * FROM auth_challenges WHERE id=?').get(challengeId);
+   if(!challenge||challenge.kind!=='totp_rotation'||challenge.user_id!==userId||challenge.session_hash!==proofHash||challenge.expires<=now)throw new Error('Invalid replacement challenge');
+   const replacement=verifyChallenge(challenge.challenge);if(!replacement)throw new Error('Invalid new authenticator');
+   const {secret,counter}=replacement;
+   db.prepare('UPDATE users SET totp_secret=?,totp_counter=? WHERE id=?').run(secret,counter,userId);
+   db.prepare('DELETE FROM sessions WHERE user_id=?').run(userId);
+   db.prepare('DELETE FROM recovery_codes WHERE user_id=?').run(userId);
+   db.prepare('DELETE FROM auth_challenges WHERE user_id=?').run(userId);
+   for(const hash of recoveryHashes)db.prepare('INSERT INTO recovery_codes(hash,user_id) VALUES (?,?)').run(hash,userId);
+   db.prepare('INSERT INTO sessions VALUES (?,?,?,?,?,?,?)').run(session.hash,userId,now,now,session.expires,now,'authenticator_replaced');
+   audit(now,'authenticator_replaced',userId,userId,'success');return userById(userId);
+  });},
   createApplication(app,actor,now){return transaction(()=>{
    db.prepare('INSERT INTO applications(id,name,capabilities,networks,scopes,key_hash,expires) VALUES (?,?,?,?,?,?,?)').run(app.id,app.name,JSON.stringify(app.capabilities),JSON.stringify(app.networks),JSON.stringify(app.scopes),app.keyHash,app.expires);
    audit(now,'application_created',actor,app.id,'success');

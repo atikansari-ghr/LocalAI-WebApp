@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { once } from 'node:events';
 import { createServer, request as httpRequest } from 'node:http';
+import { DatabaseSync } from 'node:sqlite';
 import { loadConfig } from '../packages/shared/config.mjs';
 import { openSecurityRepository } from '../packages/auth/repository.mjs';
 import { initializeVault,totp,tokenDigest } from '../packages/auth/crypto.mjs';
@@ -31,7 +32,7 @@ async function fixture(t,trusted='127.0.0.1'){
   if(value.csrf)csrf=value.csrf;
   return {response,value};
  }
- return {auth,repo,request,jar};
+ return {auth,repo,request,jar,statePath:join(dir,'s.sqlite')};
 }
 test('browser setup requires proxy TLS origin and CSRF and issues secure session cookies',async t=>{
  const f=await fixture(t);
@@ -86,4 +87,33 @@ test('device names can be saved for an existing passkey with ownership CSRF and 
  assert.ok(!JSON.stringify(f.repo.auditRecords()).includes('حاسوب العمل'));
  assert.equal((await f.request('/auth/passkeys/remove',{method:'POST',body:{id}})).response.status,200);
  assert.deepEqual((await f.request('/auth/passkeys')).value.passkeys,[]);
+});
+
+test('recovery replacement rotates HTTP cookies and codes without returning session tokens',async t=>{
+ const f=await fixture(t);await f.request('/auth/bootstrap');
+ const pending=await f.request('/auth/setup/begin',{method:'POST',body:{code:f.auth.issueSetupCode(),username:'admin',password:'correct horse battery staple'}});
+ const setup=await f.request('/auth/setup/complete',{method:'POST',body:{code:totp(pending.value.totpSecret)}});
+ const original=f.jar.get('__Host-localai-session');
+ const replacement=await f.request('/auth/totp/replace/begin',{method:'POST',body:{password:'correct horse battery staple',recoveryCode:setup.value.recoveryCodes[0]}});
+ assert.equal(replacement.response.status,200);assert.equal(replacement.value.token,undefined);
+ assert.notEqual(f.jar.get('__Host-localai-session'),original);
+ assert.equal((await f.request('/auth/session',{headers:{cookie:'__Host-localai-session='+original}})).response.status,401);
+ const result=await f.request('/auth/totp/replace/complete',{method:'POST',body:{id:replacement.value.id,code:totp(replacement.value.totpSecret)}});
+ assert.equal(result.response.status,200);assert.equal(result.value.token,undefined);assert.equal(result.value.recoveryCodes.length,10);
+ await f.request('/auth/logout',{method:'POST',body:{}});await f.request('/auth/bootstrap');
+ assert.equal((await f.request('/auth/login',{method:'POST',body:{username:'admin',password:'correct horse battery staple',recoveryCode:setup.value.recoveryCodes[1]}})).response.status,401);
+ assert.equal((await f.request('/auth/login',{method:'POST',body:{username:'admin',password:'correct horse battery staple',recoveryCode:result.value.recoveryCodes[0]}})).response.status,200);
+});
+
+test('role changes immediately remove administrator access from an existing session',async t=>{
+ const f=await fixture(t);await f.request('/auth/bootstrap');
+ const pending=await f.request('/auth/setup/begin',{method:'POST',body:{code:f.auth.issueSetupCode(),username:'admin',password:'correct horse battery staple'}});
+ const setup=await f.request('/auth/setup/complete',{method:'POST',body:{code:totp(pending.value.totpSecret)}});
+ // Fixture-only role change; production administration is a separate interface.
+ const db=new DatabaseSync(f.statePath);try{db.prepare("UPDATE users SET role='user' WHERE id=?").run(setup.value.user.id);}finally{db.close();}
+ assert.equal((await f.request('/auth/session')).value.user.role,'user');
+ assert.equal((await f.request('/profile')).response.status,200);
+ assert.equal((await f.request('/admin')).response.status,403);
+ assert.equal((await f.request('/admin/api/apps')).response.status,403);
+ assert.equal((await f.request('/admin/api/apps/create',{method:'POST',body:{name:'Denied',capabilities:['chat']}})).response.status,401);
 });
