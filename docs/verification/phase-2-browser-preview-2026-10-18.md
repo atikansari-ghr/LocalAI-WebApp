@@ -24,8 +24,10 @@ An independent read-only review found no critical transport/CSRF bypass. Its imp
 Actual deployment exposed a CLI entrypoint defect when invoked through the current symlink. Both setup-code and lifecycle tools now resolve their invoked path before deciding whether to execute. The Linux regression test verifies invalid calls through symlinks fail, rather than silently succeeding. The installed setup-code tool then successfully issued a private 30-minute code; it is not included in this repository.
 
 ## Gates still blocked
-- Administrator password and authenticator enrollment require the user's credential handoff. No agent-selected administrator password was installed.
+- The user completed administrator enrollment and confirmed successful login on 2026-10-18. Readiness no longer reports setup_required, and a fresh anonymous browser renders sign-in rather than first-run setup. The local one-time setup-code copy was removed. No agent-selected administrator password was installed.
 - Real browser authenticated navigation, application management, recovery and physical passkey journeys still require completion.
 - Direct TLS installer probing, full user/group management and operational account/vault recovery are not qualified.
 - Native schema-update failure/restore qualification for the security migration remains pending; the earlier foundation rollback evidence alone does not prove it.
 - AI inference, Qdrant, document ingestion/OCR and later platform phases remain unimplemented. Do not interpret this preview as a complete or production-ready platform.
+
+Follow-up verification: both required GitHub CI jobs passed at 623d79b (Ubuntu and Windows). The release command still rejects absent production evidence. The running service is active and reports only runtime_not_provisioned and release_not_qualified as readiness blockers; these broad readiness labels do not certify the pending security acceptance items above.
