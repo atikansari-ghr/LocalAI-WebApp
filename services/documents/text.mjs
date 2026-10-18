@@ -14,9 +14,23 @@ function physicalLines(text){
  return lines;
 }
 function validateJson(text){
- let value;try{value=JSON.parse(text);}catch{fail('invalid_json');}
- const stack=[[value,0]];let nodes=0;
- while(stack.length){const [item,depth]=stack.pop();if(++nodes>MAX_UNITS||depth>32)fail('json_structure_limit');if(item!==null&&typeof item==='object'){const children=Object.values(item);if(children.length+stack.length+nodes>MAX_UNITS)fail('json_structure_limit');for(const child of children)stack.push([child,depth+1]);}}
+ // Bound source tokens before JSON.parse can discard duplicate members. This
+ // scanner only counts structure; JSON.parse remains the syntax authority.
+ let depth=0,nodes=0;
+ const count=()=>{if(++nodes>MAX_UNITS)fail('json_structure_limit');};
+ for(let index=0;index<text.length;index++){
+  const char=text[index];
+  if(char==='"'){
+   index++;while(index<text.length&&text[index]!=='"'){if(text[index]==='\\')index++;index++;}
+   let next=index+1;while(/\s/.test(text[next]??'')&&next<text.length)next++;
+   if(text[next]!==':')count();
+  }else if(char==='['||char==='{'){count();if(++depth>32)fail('json_structure_limit');}
+  else if(char===']'||char==='}')depth--;
+  else if(/[-0-9tfn]/.test(char)){
+   count();while(index+1<text.length&&!/[\s,\]}]/.test(text[index+1]))index++;
+  }
+ }
+ try{JSON.parse(text);}catch{fail('invalid_json');}
 }
 function parseCsv(text){
  const units=[],rows=[];let index=0,row=1,column=1,values=[];

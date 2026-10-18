@@ -11,6 +11,8 @@ test('native text parsing preserves English Arabic literal content and precise d
 test('JSON parsing validates bounded structure while retaining original duplicate-key evidence literally',()=>{
  const text='{"name":"first","name":"second","arabic":"مرحبا"}';assert.equal(parseTextDocument(input('data.json',text)).text,text);
  for(const text of ['{invalid}', '['.repeat(40)+'0'+']'.repeat(40),'['+Array(10001).fill('0').join(',')+']'])assert.throws(()=>parseTextDocument(input('data.json',text)));
+ assert.throws(()=>parseTextDocument(input('duplicate.json','{"a":'+'['.repeat(40)+'0'+']'.repeat(40)+',"a":0}')),/json_structure_limit/);
+ assert.equal(parseTextDocument(input('quoted.json','{"literal":"[[[\\\"not structure\\\"]]]"}')).parser,'localai-json-v1');
  assert.throws(()=>parseTextDocument(input('huge.txt','x'.repeat(65537))),/line_limit/);
  assert.throws(()=>parseTextDocument(input('many.txt','x\n'.repeat(10001))),/unit_limit/);
 });
