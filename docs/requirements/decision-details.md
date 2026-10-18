@@ -1058,11 +1058,11 @@ The Web Admin's **OCR Languages** section can therefore show which languages are
 
 **Decision 67 confirmed and updated: intelligent OCR detection with this fallback order:**
 
-1. **light-ocr** — primary OCR engine  
-2. **Tesseract** — secondary fallback  
+1. **light-ocr** — primary OCR engine
+2. **Tesseract** — secondary fallback
 3. **PaddleOCR** — tertiary fallback for difficult cases
 
-I checked the repository you specified. `arcships/light-ocr` is an offline OCR project for Node.js/C++ built around **PP-OCRv6**, with confidence scores and coordinates, and hardware acceleration support where available. It is Apache-2.0 licensed. 
+I checked the repository you specified. `arcships/light-ocr` is an offline OCR project for Node.js/C++ built around **PP-OCRv6**, with confidence scores and coordinates, and hardware acceleration support where available. It is Apache-2.0 licensed.
 
 For your **Debian 13 / 4-vCPU / 6-GB RAM** Local AI server, this order makes sense because we can try the lightweight engine first and escalate only when confidence or extraction quality is insufficient.
 
@@ -1174,9 +1174,9 @@ Local AI will ship with common schemas and allow administrators to create, clone
 
 **Decision 75 confirmed: Option C — Precise, permission-aware evidence citations.**
 
-I also checked the requirements from your **Family Calendar** project. This changes an important architectural point: the Local AI server should be designed as a **general-purpose private Family AI service**, not specifically as a PDMS AI backend. 
+I also checked the requirements from your **Family Calendar** project. This changes an important architectural point: the Local AI server should be designed as a **general-purpose private Family AI service**, not specifically as a PDMS AI backend.
 
-Your Family Calendar requirements include uploading school/college PDFs and images, extracting academic dates and holidays, handling official India/Saudi holidays and travel dates, and using an **Upload → AI extraction → review/edit → approval** workflow rather than allowing AI to insert events directly into the live calendar. You also wanted source-page/confidence tracking, duplicate/revision handling, circular amendments, semester profiles, recurrence rules, and privacy controls. 
+Your Family Calendar requirements include uploading school/college PDFs and images, extracting academic dates and holidays, handling official India/Saudi holidays and travel dates, and using an **Upload → AI extraction → review/edit → approval** workflow rather than allowing AI to insert events directly into the live calendar. You also wanted source-page/confidence tracking, duplicate/revision handling, circular amendments, semester profiles, recurrence rules, and privacy controls.
 
 So our architecture should become:
 
@@ -1705,8 +1705,8 @@ Settings should not merely show technical labels. Each important option will hav
 
 For example:
 
-> **Model Idle Timeout ⓘ**  
-> Unloads an inactive LLM to recover RAM. Default: 15 minutes. Lower values save memory but may increase the delay of the next request.  
+> **Model Idle Timeout ⓘ**
+> Unloads an inactive LLM to recover RAM. Default: 15 minutes. Lower values save memory but may increase the delay of the next request.
 > **Learn more →**
 
 **Learn more** opens the corresponding section of the **built-in Documentation panel**, not an unrelated external page.
@@ -1724,4 +1724,3 @@ A feature should **not be considered complete** until its documentation is compl
 Documentation will be versioned alongside the source code so, for example, documentation for `v1.2.0` describes the actual `v1.2.0` application.
 
 This completes the **110-question requirements/design phase**. The architecture is now sufficiently defined to produce the consolidated **Local AI Master Build Specification / Codex implementation prompt** without further architecture questions.
-

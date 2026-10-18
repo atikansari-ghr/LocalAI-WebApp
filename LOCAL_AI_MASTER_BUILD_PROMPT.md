@@ -438,8 +438,8 @@ The reason for language packs depends on the OCR engine. OCR is not like the 4B 
 ### D067
 Decision 67 confirmed and updated: intelligent OCR detection with this fallback order:
 
-1. light-ocr — primary OCR engine  
-2. Tesseract — secondary fallback  
+1. light-ocr — primary OCR engine
+2. Tesseract — secondary fallback
 3. PaddleOCR — tertiary fallback for difficult cases
 
 ### D068
@@ -480,7 +480,7 @@ Local AI will ship with common schemas and allow administrators to create, clone
 ### D075
 Decision 75 confirmed: Option C — Precise, permission-aware evidence citations.
 
-I also checked the requirements from your Family Calendar project. This changes an important architectural point: the Local AI server should be designed as a general-purpose private Family AI service, not specifically as a PDMS AI backend. 
+I also checked the requirements from your Family Calendar project. This changes an important architectural point: the Local AI server should be designed as a general-purpose private Family AI service, not specifically as a PDMS AI backend.
 
 ### D076
 Decision 76 confirmed: Option C — Hybrid application namespaces.
@@ -656,4 +656,3 @@ A build cannot be promoted when critical security, privacy, permission-isolation
 Decision 110 confirmed: Option C — Controlled Git-based release workflow, with documentation treated as a required product feature and release criterion, not an afterthought.
 
 The documentation system will include:
-
