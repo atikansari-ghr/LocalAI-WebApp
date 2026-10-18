@@ -36,7 +36,7 @@ function archivePath(value,directory){
  if(!path||Buffer.byteLength(path)>512||parts.length>16||/[\\:\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/u.test(path)||parts.some(part=>!part||part==='.'||part==='..'||/[. ]$/.test(part)||/^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)/i.test(part)))fail('archive_unsafe_path');
  return {name:directory?path+'/':path,key:path.toLowerCase(),path};
 }
-function executableBytes(bytes){if(bytes.length>=4&&['feedface','cefaedfe','feedfacf','cffaedfe','cafebabe','bebafeca'].includes(bytes.subarray(0,4).toString('hex')))return true;return bytes.subarray(0,4).equals(Buffer.from([127,69,76,70]))||(bytes.length>=64&&bytes[0]===77&&bytes[1]===90)||bytes.subarray(0,2).toString()==='#!';}
+function executableBytes(bytes){if(bytes.length>=4&&['feedface','cefaedfe','feedfacf','cffaedfe','cafebabe','bebafeca','cafebabf','bfbafeca'].includes(bytes.subarray(0,4).toString('hex')))return true;return bytes.subarray(0,4).equals(Buffer.from([127,69,76,70]))||(bytes.length>=64&&bytes[0]===77&&bytes[1]===90)||bytes.subarray(0,2).toString()==='#!';}
 async function readArchive(input,state,depth){
  state.check();if(depth>state.policy.maxArchiveDepth)fail('archive_depth_limit');
  const document=inspectDocument(input);if(document.format!=='zip')fail('office_parser_unavailable');
