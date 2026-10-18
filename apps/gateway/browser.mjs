@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { newToken,equalSecret } from '../../packages/auth/crypto.mjs';
 import { matchesNetwork,resolveClientIp } from '../../packages/auth/network.mjs';
 import { AuthError } from '../../packages/auth/service.mjs';
+import { InferenceError } from '../../services/inference/client.mjs';
 const assets=new Map([
  ['/assets/passkey-name.js',['text/javascript; charset=utf-8',readFileSync(new URL('../../packages/auth/passkey-name.mjs',import.meta.url))]],
  ['/assets/app.js',['text/javascript; charset=utf-8',readFileSync(new URL('../web-admin/app.js',import.meta.url))]],
@@ -30,7 +31,7 @@ function readJson(request){
  });
 }
 function fields(body,allowed){if(Object.keys(body).some(k=>!allowed.includes(k)))throw new HttpError(400);return body;}
-export function createBrowserHandler({config,repo,auth,apps,passkeys,vault}){
+export function createBrowserHandler({config,repo,auth,apps,passkeys,vault,inference}){
  const origin=new URL(config.origin);
  return (request,response)=>{
   const send=(status,body,type='application/json; charset=utf-8')=>{response.statusCode=status;response.setHeader('Content-Type',type);response.end(type.startsWith('application/json')?JSON.stringify(body):body);};
@@ -56,6 +57,36 @@ export function createBrowserHandler({config,repo,auth,apps,passkeys,vault}){
     const {token,...safe}=value;return send(200,safe);
    };
    const path=new URL(request.url,config.origin).pathname;
+   if(path.startsWith('/v1/')){
+    const routes={'/v1/models':{method:'GET',capability:'models'},'/v1/chat/completions':{method:'POST',capability:'chat'},'/v1/embeddings':{method:'POST',capability:'embeddings'}};
+    const route=routes[path];if(!route)throw new HttpError(404);
+    if(request.method!==route.method)throw new HttpError(405);
+    if(request.headers.origin!==undefined&&request.headers.origin!==config.origin)throw new HttpError(403);
+    if(request.headers.authorization!==undefined){
+     if(sessionToken||!/^Bearer [A-Za-z0-9_-]{43}$/.test(request.headers.authorization))throw new HttpError(403);
+     try{apps.authenticate(request.headers.authorization.slice(7),{capability:route.capability,ip});}catch{throw new HttpError(403);}
+    }else{
+     requireSession();
+     if(route.method==='POST'){if(request.headers.origin!==config.origin)throw new HttpError(403);sessionCsrf();}
+    }
+    if(!inference)throw new HttpError(503);
+    if(path==='/v1/models')return send(200,{object:'list',data:[{id:'localai-chat',object:'model',owned_by:'localai'},{id:'localai-embedding',object:'model',owned_by:'localai'}]});
+    const body=await readJson(request),controller=new AbortController(),cancel=()=>controller.abort();
+    response.once('close',cancel);request.once('aborted',cancel);
+    try{
+     if(path==='/v1/embeddings')return send(200,await inference.embeddings(body,{signal:controller.signal}));
+     const result=await inference.chat(body,{signal:controller.signal,onChunk:async chunk=>{
+      if(controller.signal.aborted)throw controller.signal.reason;
+      if(!response.headersSent){response.statusCode=200;response.setHeader('Content-Type','text/event-stream; charset=utf-8');response.setHeader('X-Accel-Buffering','no');}
+      if(!response.write(chunk))await new Promise((resolve,reject)=>{
+       const done=()=>{cleanup();resolve();},closed=()=>{cleanup();reject(new Error('Client disconnected'));};
+       const cleanup=()=>{response.off('drain',done);response.off('close',closed);};
+       response.once('drain',done);response.once('close',closed);
+      });
+     }});
+     if(body.stream){response.end();return;}return send(200,result);
+    }finally{controller.abort();response.off('close',cancel);request.off('aborted',cancel);}
+   }
    if(request.method==='GET'){
     if(assets.has(path)){const [type,body]=assets.get(path);return send(200,body,type);}
     if(path==='/auth/bootstrap'){
@@ -105,10 +136,11 @@ export function createBrowserHandler({config,repo,auth,apps,passkeys,vault}){
    if(path==='/admin/api/apps/revoke'){fields(body,['id']);apps.revoke(sessionToken,request.headers['x-csrf-token'],body.id);return send(200,{ok:true});}
    throw new HttpError(404);
   })().catch(error=>{
+   if(response.destroyed)return;
    if(response.headersSent){response.destroy();return;}
-   const status=error instanceof AuthError?401:error instanceof HttpError?error.status:error instanceof TypeError?400:503;
+   const status=error instanceof AuthError?401:error instanceof HttpError||error instanceof InferenceError?error.status:error instanceof TypeError?400:503;
    response.setHeader('Connection','close');
-   send(status,{error:{code:status===401?'authentication_failed':status===503?'service_unavailable':'request_rejected'}});
+   send(status,{error:{code:error instanceof InferenceError?error.code:status===401?'authentication_failed':status===503?'service_unavailable':'request_rejected'}});
   });
  };
 }

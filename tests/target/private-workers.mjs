@@ -6,6 +6,7 @@ import {randomBytes} from 'node:crypto';
 import manifest from '../../services/inference/starter-manifest.json' with {type:'json'};
 import {provisionStarter} from '../../installer/install-ai.mjs';
 import {renderWorkerUnit} from '../../services/inference/native.mjs';
+import {createInferenceClient} from '../../services/inference/client.mjs';
 
 if(process.platform!=='linux'||process.getuid()!==0||process.env.TARGET_TEST_LXC!=='disposable')throw new Error('Explicit disposable Debian test LXC required');
 const run=(file,args,options={})=>execFileSync(file,args,{encoding:'utf8',timeout:180000,...options}).trim();
@@ -88,6 +89,16 @@ try{
  const streamed=await request(8081,'/v1/chat/completions',{messages:[{role:'user',content:'Count from one to five.'}],stream:true,max_tokens:32,temperature:0,chat_template_kwargs:{enable_thinking:false}});
  const streamText=await streamed.text();assert.match(streamText,/data: \[DONE\]/);assert.match(streamText,/"content"\s*:/);
  checks.push({check:'native-sse-stream'});
+ const client=createInferenceClient({key:secret});
+ const adapted=await client.chat({messages:[{role:'user',content:'Reply with the word ready.'}],max_tokens:16});
+ assert.ok(adapted.choices[0].message.content);assert.equal(adapted.model,'localai-chat');
+ const embedded=await client.embeddings({input:['A family document.','وثيقة عائلية.']});assert.equal(embedded.data.length,2);
+ await assert.rejects(client.chat({messages:[{role:'user',content:'hello '.repeat(5000)}],max_tokens:32}),/context/);
+ const cancellation=new AbortController();let chunks=0;
+ await assert.rejects(client.chat({messages:[{role:'user',content:'Write a long story about a forest.'}],stream:true,max_tokens:1024},{signal:cancellation.signal,onChunk:chunk=>{const event=JSON.parse(Buffer.from(chunk).toString().slice(6));if(event.choices?.[0]?.delta?.content){chunks++;cancellation.abort();}}}));
+ assert.ok(chunks>0);assert.equal(client.busy,false);
+ const afterCancel=await client.chat({messages:[{role:'user',content:'Reply with the word ready.'}],max_tokens:16});assert.ok(afterCancel.choices[0].message.content);
+ checks.push({check:'gateway-adapter-real-tokenizer-context-cancellation-and-reuse'});
  const unauthenticated=await fetch('http://127.0.0.1:8081/v1/models',{signal:AbortSignal.timeout(5000)});assert.equal(unauthenticated.status,401);await unauthenticated.body?.cancel();
  assert.equal(run('systemctl',['show','localai-ai.slice','--property=MemorySwapCurrent','--value']),'0');
  assert.equal(run('systemctl',['show','localai.service','--property=MainPID','--value']),gatewayPid);

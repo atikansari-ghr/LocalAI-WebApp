@@ -28,3 +28,11 @@ The initial test also caught a runtime parent-directory permission error and a h
 Gateway authentication/capabilities, context accounting, overload admission, disconnection/deadline cancellation, restart recovery and independent whole-phase review remain mandatory. No model is advertised through the application yet. The candidate report remains `workers-loaded-unqualified`; downloadable integrity and native smoke tests do not establish complete runtime acceptance. Full-platform release gates stay closed.
 
 Host-bound systemd encryption protects the internal worker credential at rest from the service accounts, but does not establish encrypted host storage or qualified backup recovery. Those remain later operational/security gates.
+
+## Adapter continuation
+
+The next source checkpoint adds tokenizer-backed gateway admission and authorized route contracts without activating the deployed gateway. Full suite:79/79 actual Debian,77 Windows passes plus2 explicitly POSIX-only skips; documentation checks pass. Both required CI jobs passed the preceding worker checkpoint c26f841; adapter CI must be checked for its own commit.
+
+The native repeat passed English/Arabic chat and embeddings, then exercised the adapter's actual template/tokenizer endpoints, excessive-context rejection, cancellation after a generated text chunk, and a successful subsequent request. Latest aggregate current memory was4,511,096,832bytes, observed slice peak4,719,116,288bytes, swap0. These repeated results do not establish loaded-model fallback, idle unload or restart acceptance.
+
+HTTP tests use isolated SQLite users/applications and verify key capabilities, registered IP policy, revocation, browser CSRF and mixed-identity rejection before inference. Streaming tests reject incomplete responses and remove internal backend model paths. A regression exposed downstream backpressure holding the admission slot beyond its deadline; cancellation now bounds that wait too. Deadline failures return a typed504 rather than being mistaken for a malformed client request. The release command still rejects missing signed/complete production evidence.

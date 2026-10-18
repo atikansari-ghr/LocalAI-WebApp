@@ -13,11 +13,11 @@ import { createAuthService } from '../packages/auth/service.mjs';
 import { createApplicationService } from '../packages/auth/applications.mjs';
 import { createPasskeyService } from '../packages/auth/passkeys.mjs';
 import { createBrowserHandler } from '../apps/gateway/browser.mjs';
-async function fixture(t,trusted='127.0.0.1'){
+async function fixture(t,trusted='127.0.0.1',inference){
  const dir=mkdtempSync(join(tmpdir(),'localai-browser-')),repo=openSecurityRepository(join(dir,'s.sqlite')),vault=initializeVault(join(dir,'master.key'),{encryptedStateExists:repo.hasEncryptedState()});
  const auth=createAuthService({repo,vault}),apps=createApplicationService({repo,auth}),passkeys=createPasskeyService({repo,auth,rpId:'localai.test',origin:'https://localai.test'});
  const config=loadConfig({LOCALAI_TRANSPORT:'proxy',LOCALAI_ORIGIN:'https://localai.test',LOCALAI_TRUSTED_PROXIES:trusted});
- const server=createServer(createBrowserHandler({config,repo,auth,apps,passkeys,vault}));server.listen(0,'127.0.0.1');await once(server,'listening');
+ const server=createServer(createBrowserHandler({config,repo,auth,apps,passkeys,vault,inference}));server.listen(0,'127.0.0.1');await once(server,'listening');
  t.after(async()=>{await new Promise(r=>server.close(r));repo.close();rmSync(dir,{recursive:true,force:true});});
  const jar=new Map();let csrf='';
  async function request(path,{method='GET',body,headers={}}={}){
@@ -32,8 +32,29 @@ async function fixture(t,trusted='127.0.0.1'){
   if(value.csrf)csrf=value.csrf;
   return {response,value};
  }
- return {auth,repo,request,jar,statePath:join(dir,'s.sqlite')};
+ return {auth,repo,apps,request,jar,statePath:join(dir,'s.sqlite')};
 }
+
+test('unified AI routes enforce application capability IP policy and browser CSRF before inference',async t=>{
+ let invoked=0;const inference={chat:async()=>{invoked++;return {choices:[{message:{content:'synthetic'}}]};},embeddings:async()=>{invoked++;return {data:[]};}};
+ const f=await fixture(t,'127.0.0.1',inference);await f.request('/auth/bootstrap');
+ const pending=await f.request('/auth/setup/begin',{method:'POST',body:{code:f.auth.issueSetupCode(),username:'admin',password:'correct horse battery staple'}});
+ await f.request('/auth/setup/complete',{method:'POST',body:{code:totp(pending.value.totpSecret)}});
+ const token=f.jar.get('__Host-localai-session'),csrf=f.auth.session(token).csrf;
+ const app=f.apps.create(token,csrf,{name:'AI test',capabilities:['models','chat'],networks:['192.0.2.15/32']});
+ const headers={authorization:'Bearer '+app.key,cookie:''},body={messages:[{role:'user',content:'hello'}]};
+ assert.equal((await f.request('/v1/models',{headers})).response.status,200);
+ assert.equal((await f.request('/v1/chat/completions',{method:'POST',headers,body})).response.status,200);
+ assert.equal(invoked,1);
+ for(const denied of [{...headers,'x-forwarded-for':'192.0.2.16'},{...headers,origin:'https://evil.test'},{...headers,cookie:'__Host-localai-session='+token}])assert.equal((await f.request('/v1/chat/completions',{method:'POST',headers:denied,body})).response.status,403);
+ assert.equal((await f.request('/v1/embeddings',{method:'POST',headers,body:{input:'hello'}})).response.status,403);
+ assert.equal((await f.request('/v1/chat/completions',{method:'POST',headers:{'x-csrf-token':'wrong'},body})).response.status,403);
+ assert.equal(invoked,1);
+ assert.equal((await f.request('/v1/chat/completions',{method:'POST',body})).response.status,200);
+ f.apps.revoke(token,csrf,app.id);
+ assert.equal((await f.request('/v1/models',{headers})).response.status,403);
+ assert.equal((await f.request('/v1/models',{headers:{cookie:''}})).response.status,401);
+});
 test('browser setup requires proxy TLS origin and CSRF and issues secure session cookies',async t=>{
  const f=await fixture(t);
  assert.equal((await f.request('/auth/bootstrap',{headers:{'x-forwarded-proto':'http'}})).response.status,403);
