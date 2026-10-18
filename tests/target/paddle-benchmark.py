@@ -1,4 +1,4 @@
-"""Offline CPU benchmark for an isolated, hash-pinned synthetic OCR candidate."""
+"""Offline CPU benchmark; its filename must not shadow the paddleocr package."""
 import gc,hashlib,json,math,os,platform,time
 from pathlib import Path
 from importlib.metadata import version
