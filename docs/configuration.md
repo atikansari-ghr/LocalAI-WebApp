@@ -47,7 +47,7 @@ LOCALAI_ORIGIN=https://localai.ansariz.biz
 LOCALAI_TRUSTED_PROXIES=192.168.10.245/32
 ```
 
-The proxy host and certificate are not yet verified. Keep the running foundation on loopback until the browser transport tests, review and deployment checks pass.
+The proxy host and certificate were verified on the disposable LXC on 2026-10-18: HTTPS setup returned 200, HTTP redirected to HTTPS and direct upstream browser access returned 403. The reviewed security preview is deployed with this configuration. This does not qualify production release or the remaining browser authentication and recovery gates.
 
 ## Help integration
 There is no settings UI yet. When built, its tooltips must consume this registry and link to these built-in documentation sections. Registry coverage is checked now; actual UI tooltips and screenshots cannot be accepted before a UI exists.

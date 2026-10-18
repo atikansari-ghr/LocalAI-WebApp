@@ -1,6 +1,6 @@
 # Security core — phase 2 in progress
 
-These modules are under development. Browser routes are implemented for explicitly configured HTTPS transport; the deployed foundation remains on loopback until target/browser checks pass. A public application inference API is not implemented. Full phase 2 acceptance remains blocked on browser, transport and recovery qualification.
+These modules are under development. A reviewed security preview is deployed behind the configured HTTPS proxy on the disposable LXC. A public application inference API is not implemented. Full phase 2 acceptance remains blocked on complete browser authentication, passkey and recovery qualification.
 
 ## Identity and setup
 There is no default account. The service layer issues random 256-bit one-time setup codes with 30-minute expiry. Claiming a valid code creates a pending administrator; a 10-minute enrollment token and TOTP verification activate it. Concurrent claims are serialized in SQLite. The operator may reissue setup only before initialization, removing the abandoned pending account. After configuring and verifying HTTPS, an operator can run:
