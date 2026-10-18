@@ -3,7 +3,17 @@ import assert from 'node:assert/strict';
 import {mkdtempSync,mkdirSync,writeFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {computeRuntimeFingerprint,validateQualification,assertProtectedRecord,loadQualifiedInference,parseNativeTestSummary,combineNativeQualification,computeEnvironmentFingerprint} from '../services/inference/qualification.mjs';
+import {computeNativeRuntimeFingerprint,computeRuntimeFingerprint,validateQualification,assertProtectedRecord,loadQualifiedInference,parseNativeTestSummary,combineNativeQualification,computeEnvironmentFingerprint} from '../services/inference/qualification.mjs';
+
+test('extracted runtime identity binds executable and library bytes independently of the archive',t=>{
+ const root=mkdtempSync(join(tmpdir(),'lai-native-bytes-'));t.after(()=>rmSync(root,{recursive:true,force:true}));
+ writeFileSync(join(root,'llama-server'),'qualified executable');writeFileSync(join(root,'library.so'),'qualified library');
+ const initial=computeNativeRuntimeFingerprint(root,{requireRoot:false});
+ writeFileSync(join(root,'library.so'),'different compatible library');
+ assert.notEqual(computeNativeRuntimeFingerprint(root,{requireRoot:false}),initial);
+ writeFileSync(join(root,'library.so'),'qualified library');assert.equal(computeNativeRuntimeFingerprint(root,{requireRoot:false}),initial);
+ writeFileSync(join(root,'llama-server'),'replacement executable');assert.notEqual(computeNativeRuntimeFingerprint(root,{requireRoot:false}),initial);
+});
 
 const expected={sourceCommit:'a'.repeat(40),sourceFingerprint:'b'.repeat(64),starterManifest:'c'.repeat(64),fallbackManifest:'d'.repeat(64),environmentFingerprint:'e'.repeat(64)};
 const required=['english-chat','arabic-chat','english-arabic-embeddings','native-sse-stream','gateway-adapter-real-tokenizer-context-cancellation-and-reuse','idle-sleep-and-lazy-reload','native-worker-crash-restart-and-vault-isolation','real-fallback-with-primary-http-fault-circuit-cooldown-and-recovery','child-listeners-isolated-and-unrelated-user-denied','isolated-native-activation-rollback'];

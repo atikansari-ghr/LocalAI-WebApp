@@ -19,9 +19,9 @@ const control={
 };
 let prepared=false;
 try{
- mkdirSync(base,{mode:0o750});chownSync(base,0,gid);mkdirSync(statePath,{mode:0o700});chownSync(statePath,uid,gid);
+ mkdirSync(base,{mode:0o750});chmodSync(base,0o750);chownSync(base,0,gid);mkdirSync(statePath,{mode:0o700});chownSync(statePath,uid,gid);
  const code=`import {writeFileSync} from 'node:fs';import {openState} from 'file:///opt/localai/current/packages/database/index.mjs';import {createGateway} from 'file:///opt/localai/current/apps/gateway/server.mjs';const state=openState(${JSON.stringify(statePath+'/fixture.sqlite')});const server=createGateway({state});server.listen(0,'127.0.0.1',()=>writeFileSync(${JSON.stringify(statePath+'/port')},String(server.address().port)));process.on('SIGTERM',()=>server.close(()=>{state.close();process.exit(0);}));`;
- writeFileSync(base+'/gateway.mjs',code,{mode:0o640});chownSync(base+'/gateway.mjs',0,gid);
+ writeFileSync(base+'/gateway.mjs',code,{mode:0o640});chmodSync(base+'/gateway.mjs',0o640);chownSync(base+'/gateway.mjs',0,gid);
  const original={};
  for(const [logical,file]of Object.entries(units)){
   original[file]='[Unit]\nDescription=Disposable Local AI activation recovery fixture\n[Service]\nType=simple\nUser='+(logical==='localai.service'?'localai':'localai-inference')+'\nExecStart='+(logical==='localai.service'?'/opt/localai/node/bin/node '+base+'/gateway.mjs':'/usr/bin/sleep infinity')+'\nRestart=no\nMemoryMax=128M\n[Install]\nWantedBy=multi-user.target\n';

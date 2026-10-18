@@ -1,7 +1,8 @@
 import {createHash} from 'node:crypto';
-import {lstatSync,readdirSync,readFileSync,realpathSync,openSync,fstatSync,closeSync,constants} from 'node:fs';
-import {join,basename} from 'node:path';
+import {lstatSync,readdirSync,readFileSync,readlinkSync,realpathSync,openSync,fstatSync,closeSync,constants} from 'node:fs';
+import {join,basename,relative,isAbsolute} from 'node:path';
 import {createInferenceClient} from './client.mjs';
+import {assertNativeUnitDefinitions} from './systemd.mjs';
 import {validateStarterManifest,validateFallbackModel} from './assets.mjs';
 import starter from './starter-manifest.json' with {type:'json'};
 import fallback from './fallback-manifest.json' with {type:'json'};
@@ -52,6 +53,23 @@ export function computeRuntimeFingerprint(sourceRoot){
  return createHash('sha256').update('localai-runtime-v1\n').update(JSON.stringify(files.sort((a,b)=>a[0]<b[0]?-1:a[0]>b[0]?1:0))).digest('hex');
 }
 const digest=value=>createHash('sha256').update(value).digest('hex');
+export function computeNativeRuntimeFingerprint(root='/opt/localai/ai/runtimes/llama-b11669',{requireRoot=true}={}){
+ const canonical=realpathSync(root),entries=[];
+ const visit=path=>{
+  const stat=lstatSync(path),name=relative(canonical,path);
+  if(requireRoot&&(stat.uid!==0||(!stat.isSymbolicLink()&&(stat.mode&0o022)!==0)))throw new Error('Extracted runtime must be protected and root-owned');
+  if(stat.isSymbolicLink()){
+   const target=relative(canonical,realpathSync(path));
+   if(isAbsolute(target)||target==='..'||target.startsWith('../')||target.startsWith('..\\'))throw new Error('Runtime link escapes extracted tree');
+   entries.push([name,'link',readlinkSync(path)]);
+  }else if(stat.isDirectory()){entries.push([name,'directory',stat.mode&0o777]);for(const child of readdirSync(path).sort())visit(join(path,child));}
+  else if(stat.isFile()){if(stat.nlink!==1)throw new Error('Runtime hard links are not supported');entries.push([name,'file',stat.mode&0o777,digest(readFileSync(path))]);}
+  else throw new Error('Unexpected extracted runtime entry');
+ };
+ if(lstatSync(root).isSymbolicLink())throw new Error('Runtime root must not be a link');
+ visit(canonical);if(!lstatSync(join(canonical,'llama-server')).isFile())throw new Error('Native executable missing');
+ return digest(JSON.stringify(entries));
+}
 export function computeEnvironmentFingerprint({read=path=>readFileSync(path,'utf8')}={}){
  const cpu=read('/proc/cpuinfo'),memory=read('/proc/meminfo');
  const machine=read('/etc/machine-id').trim();if(!/^[a-f0-9]{32}$/.test(machine))throw new Error('Native machine identity unavailable');
@@ -61,7 +79,7 @@ export function computeEnvironmentFingerprint({read=path=>readFileSync(path,'utf
 }
 export function expectedQualificationIdentity(sourceRoot,sourceCommit=basename(realpathSync(sourceRoot))){
  if(!/^[a-f0-9]{40}$/.test(sourceCommit))throw new Error('Immutable source revision required');
- return {sourceCommit,sourceFingerprint:computeRuntimeFingerprint(sourceRoot),starterManifest:digest(JSON.stringify(validateStarterManifest(starter))),fallbackManifest:digest(JSON.stringify({schemaVersion:1,assets:[validateFallbackModel(fallback)]})),environmentFingerprint:computeEnvironmentFingerprint()};
+ return {sourceCommit,sourceFingerprint:computeRuntimeFingerprint(sourceRoot),starterManifest:digest(JSON.stringify(validateStarterManifest(starter))),fallbackManifest:digest(JSON.stringify({schemaVersion:1,assets:[validateFallbackModel(fallback)]})),environmentFingerprint:digest(JSON.stringify({target:computeEnvironmentFingerprint(),extractedRuntime:computeNativeRuntimeFingerprint()}))};
 }
 function readProtectedFile(path,{optional=false,credential=false}={}){
  let fd;
@@ -79,6 +97,7 @@ export function loadQualifiedInference({sourceRoot,reportPath='/etc/localai/infe
  if(process.platform!=='linux')throw new Error('Qualified native runtime requires Linux');
  const record=JSON.parse(raw.toString('utf8'));exactKeys(record,['qualification','units','presetHash']);
  validateQualification(record.qualification,expectedQualificationIdentity(sourceRoot));
+ assertNativeUnitDefinitions();
  exactKeys(record.units,['chat','embedding','slice']);
  const files={chat:'/etc/systemd/system/localai-chat.service',embedding:'/etc/systemd/system/localai-embedding.service',slice:'/etc/systemd/system/localai-ai.slice'};
  for(const [name,file]of Object.entries(files)){if(!/^[a-f0-9]{64}$/.test(record.units[name])||digest(readProtectedFile(file))!==record.units[name])throw new Error('Qualified worker configuration mismatch');}

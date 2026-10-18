@@ -6,6 +6,7 @@ import {createHash,randomUUID} from 'node:crypto';
 import {activateNativeRuntime,recoverNativeRuntime,readNativeJournal} from './native-activation.mjs';
 import {expectedQualificationIdentity,validateQualification} from '../services/inference/qualification.mjs';
 import {renderChatRouterUnit,renderChatRouterPresets,renderWorkerUnit} from '../services/inference/native.mjs';
+import {assertNativeUnitDefinitions,assertNativeEffectiveSettings} from '../services/inference/systemd.mjs';
 import {provisionStarter,provisionFallback} from './install-ai.mjs';
 import {createInferenceClient,requestPrivateWorker} from '../services/inference/client.mjs';
 import {probeGateway,probeGatewayRuntime,readInstallationConfig} from './lifecycle.mjs';
@@ -41,10 +42,14 @@ export async function activatePrivateRuntime(){
  const noDownload=async()=>{throw new Error('Qualified asset missing; provision and requalify before activation');};
  const primary=await provisionStarter(starter,{fetchImpl:noDownload}),small=await provisionFallback(fallback,{fetchImpl:noDownload});
  if(primary.manifestSha256!==identity.starterManifest||small.manifestSha256!==identity.fallbackManifest)throw new Error('Qualified assets changed');
+ assertNativeUnitDefinitions();
  const runtimeGid=Number(run('getent',['group','localai-runtime']).split(':')[2]),gatewayGid=Number(run('id',['-g','localai']));
  if(!Number.isSafeInteger(runtimeGid)||!Number.isSafeInteger(gatewayGid))throw new Error('Qualified native accounts/groups missing');
  run('systemd-run',['--unit=localai-network-check-'+randomUUID(),'--wait','--collect','--property=PrivateNetwork=yes','/usr/bin/true']);
  for(const dir of ['/etc/localai-runtime','/etc/localai-runtime/models','/etc/localai-runtime/models/'+revision])directory(dir,runtimeGid);
+ // Runtime binaries are public vendor code. The gateway needs read access to
+ // fingerprint them; model and qualification directories retain private modes.
+ for(const dir of ['/opt/localai/ai','/opt/localai/ai/runtimes'])directory(dir,runtimeGid);
  directory('/etc/systemd/system/localai.service.d',0);
  const runtime='/opt/localai/ai/runtimes/llama-b11669',credential='/run/credentials/placeholder/ai-backend-key';
  const preset=renderChatRouterPresets({primary:primary.assets.find(a=>a.id==='chat').path,fallback:small.assets[0].path});
@@ -54,6 +59,7 @@ export async function activatePrivateRuntime(){
  const updates=[{path:paths.preset,content:preset,mode:0o640,gid:runtimeGid},{path:paths.chat,content:chat,mode:0o644},{path:paths.embedding,content:embedding,mode:0o644},{path:paths.slice,content:slice,mode:0o644},{path:paths.dropin,content:dropin,mode:0o644},{path:paths.record,content:JSON.stringify(record,null,2)+'\n',mode:0o640,gid:gatewayGid}];
  const key=run('systemd-creds',['decrypt','--name=ai-backend-key','/etc/credstore.encrypted/localai-ai-key','-']);if(!/^[A-Za-z0-9_-]{43}$/.test(key))throw new Error('Qualified internal credential unavailable');
  await activateNativeRuntime({journal,revision,allowedPaths:Object.values(paths),updates,control,verify:async()=>{
+  assertNativeUnitDefinitions();assertNativeEffectiveSettings(undefined,{chat,embedding});
   const client=createInferenceClient({key,fallbackEnabled:true,onFallback:()=>{}});let healthy=false;
   for(let i=0;i<60;i++){if(await client.health()){healthy=true;break;}await new Promise(resolve=>setTimeout(resolve,1000));}if(!healthy)throw new Error('Private worker readiness failed');
   for(const name of ['localai-chat.service','localai-embedding.service']){
