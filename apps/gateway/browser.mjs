@@ -3,6 +3,7 @@ import { newToken,equalSecret } from '../../packages/auth/crypto.mjs';
 import { matchesNetwork,resolveClientIp } from '../../packages/auth/network.mjs';
 import { AuthError } from '../../packages/auth/service.mjs';
 const assets=new Map([
+ ['/assets/passkey-name.js',['text/javascript; charset=utf-8',readFileSync(new URL('../../packages/auth/passkey-name.mjs',import.meta.url))]],
  ['/assets/app.js',['text/javascript; charset=utf-8',readFileSync(new URL('../web-admin/app.js',import.meta.url))]],
  ['/assets/styles.css',['text/css; charset=utf-8',readFileSync(new URL('../web-admin/styles.css',import.meta.url))]],
  ['/assets/mark.svg',['image/svg+xml',readFileSync(new URL('../web-admin/mark.svg',import.meta.url))]],
@@ -92,7 +93,8 @@ export function createBrowserHandler({config,repo,auth,apps,passkeys,vault}){
    if(path==='/auth/logout'){fields(body,[]);auth.logout(sessionToken);setCookie(response,SESSION,'',0);return send(200,{ok:true});}
    if(path==='/auth/step-up'){fields(body,['code']);auth.stepUp(sessionToken,request.headers['x-csrf-token'],body.code,ip);return send(200,{ok:true});}
    if(path==='/auth/passkeys/register/options'){fields(body,[]);return send(200,await passkeys.registrationOptions(sessionToken,request.headers['x-csrf-token']));}
-   if(path==='/auth/passkeys/register/verify'){fields(body,['id','response']);return send(200,await passkeys.register(sessionToken,request.headers['x-csrf-token'],body.id,body.response));}
+   if(path==='/auth/passkeys/register/verify'){fields(body,['id','response','name']);return send(200,await passkeys.register(sessionToken,request.headers['x-csrf-token'],body.id,body.response,body.name));}
+   if(path==='/auth/passkeys/rename'){fields(body,['id','name']);return send(200,passkeys.rename(sessionToken,request.headers['x-csrf-token'],body.id,body.name));}
    if(path==='/auth/passkeys/login/options'){fields(body,[]);return send(200,await passkeys.authenticationOptions(ip,preauth));}
    if(path==='/auth/passkeys/login/verify'){fields(body,['id','response']);return establish(await passkeys.authenticate(body.id,body.response,ip,preauth));}
    if(path==='/auth/passkeys/remove'){fields(body,['id']);const user=auth.requireFreshSession(sessionToken,request.headers['x-csrf-token']);repo.removePasskey(user.id,body.id,Date.now());return send(200,{ok:true});}

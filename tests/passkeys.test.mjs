@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { normalizePasskeyName } from '../packages/auth/passkey-name.mjs';
 import assert from 'node:assert/strict';
 import { mkdtempSync,rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -28,6 +29,13 @@ function authenticator(){
   }
  };
 }
+test('device labels share normalized Unicode limits in browser and server',()=>{
+ assert.equal(normalizePasskeyName('  e\u0301  '),'é');
+ assert.equal(normalizePasskeyName('📱'.repeat(80)),'📱'.repeat(80));
+ assert.throws(()=>normalizePasskeyName('📱'.repeat(81)));
+ assert.throws(()=>normalizePasskeyName('device\u202Ename'));
+});
+
 test('WebAuthn verifies a real signed assertion and denies replay forged signatures wrong origins and expiry',async t=>{
  const dir=mkdtempSync(join(tmpdir(),'localai-passkeys-')),repo=openSecurityRepository(join(dir,'state.sqlite'));let now=1800000000000;
  t.after(()=>{repo.close();rmSync(dir,{recursive:true,force:true});});
@@ -38,7 +46,16 @@ test('WebAuthn verifies a real signed assertion and denies replay forged signatu
  const registration=await passkeys.registrationOptions(admin.token,admin.csrf);
  assert.equal(registration.options.authenticatorSelection.residentKey,'required');
  assert.equal(registration.options.authenticatorSelection.requireResidentKey,true);
- await passkeys.register(admin.token,admin.csrf,registration.id,device.registration(registration.options.challenge));
+ const enrolled=await passkeys.register(admin.token,admin.csrf,registration.id,device.registration(registration.options.challenge),'My laptop');
+ assert.equal(repo.passkeysForUser(admin.user.id)[0].name,'My laptop');
+ passkeys.rename(admin.token,admin.csrf,enrolled.id,'  هاتفي  ');
+ assert.equal(repo.passkeysForUser(admin.user.id)[0].name,'هاتفي');
+ assert.throws(()=>passkeys.rename(admin.token,'wrong',enrolled.id,'Denied'));
+ assert.throws(()=>passkeys.rename(admin.token,admin.csrf,enrolled.id,'x'.repeat(81)));
+ assert.throws(()=>passkeys.rename(admin.token,admin.csrf,enrolled.id,'bad\nname'));
+ assert.throws(()=>repo.renamePasskey('another-user',enrolled.id,'Denied',now));
+ const readback=openSecurityRepository(join(dir,'state.sqlite'));
+ try{assert.equal(readback.passkeysForUser(admin.user.id)[0].name,'هاتفي');}finally{readback.close();}
  const login=await passkeys.authenticationOptions('127.0.0.1');
  const response=device.authentication(login.options.challenge);
  const session=await passkeys.authenticate(login.id,response,'127.0.0.1');
@@ -55,4 +72,5 @@ test('WebAuthn verifies a real signed assertion and denies replay forged signatu
  assert.equal((await passkeys.authenticate(own.id,device.authentication(own.options.challenge,2),'192.0.2.51','browser-a')).user.id,admin.user.id);
  const expired=await passkeys.authenticationOptions('192.0.2.1');now+=6*60000;
  await assert.rejects(passkeys.authenticate(expired.id,device.authentication(expired.options.challenge,2),'192.0.2.1'));
+ assert.throws(()=>passkeys.rename(admin.token,admin.csrf,enrolled.id,'Stale session'));
 });

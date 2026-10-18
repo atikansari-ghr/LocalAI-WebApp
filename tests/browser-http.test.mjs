@@ -7,7 +7,7 @@ import { once } from 'node:events';
 import { createServer, request as httpRequest } from 'node:http';
 import { loadConfig } from '../packages/shared/config.mjs';
 import { openSecurityRepository } from '../packages/auth/repository.mjs';
-import { initializeVault,totp } from '../packages/auth/crypto.mjs';
+import { initializeVault,totp,tokenDigest } from '../packages/auth/crypto.mjs';
 import { createAuthService } from '../packages/auth/service.mjs';
 import { createApplicationService } from '../packages/auth/applications.mjs';
 import { createPasskeyService } from '../packages/auth/passkeys.mjs';
@@ -55,6 +55,7 @@ test('browser setup requires proxy TLS origin and CSRF and issues secure session
 });
 test('HTTP boundary rejects malformed large bodies spoofed hosts unknown fields and state-file paths',async t=>{
  const f=await fixture(t);await f.request('/auth/bootstrap');
+ assert.equal((await f.request('/assets/passkey-name.js')).response.status,200);
  assert.equal((await f.request('/auth/bootstrap',{headers:{host:'evil.test'}})).response.status,403);
  assert.equal((await f.request('/auth/setup/begin',{method:'POST',body:'{'})).response.status,400);
  assert.equal((await f.request('/auth/setup/begin',{method:'POST',body:'x'.repeat(70000)})).response.status,413);
@@ -68,4 +69,21 @@ test('an untrusted socket peer cannot claim HTTPS or a trusted forwarded address
  const f=await fixture(t,'192.0.2.245/32');
  assert.equal((await f.request('/auth/bootstrap',{headers:{'x-forwarded-for':'192.0.2.245'}})).response.status,403);
  assert.equal((await f.request('/login')).response.status,403);
+});
+
+test('device names can be saved for an existing passkey with ownership CSRF and length enforcement',async t=>{
+ const f=await fixture(t);await f.request('/auth/bootstrap');
+ const pending=await f.request('/auth/setup/begin',{method:'POST',body:{code:f.auth.issueSetupCode(),username:'admin',password:'correct horse battery staple'}});
+ const complete=await f.request('/auth/setup/complete',{method:'POST',body:{code:totp(pending.value.totpSecret)}});
+ // A metadata-only fixture; the separate authenticator test verifies signed registration.
+ const id='synthetic-passkey';f.repo.registerPasskey(complete.value.user.id,{id,publicKey:Buffer.from([1]),counter:0},tokenDigest(f.jar.get('__Host-localai-session')),Date.now());
+ assert.equal((await f.request('/auth/passkeys')).value.passkeys[0].name,'');
+ assert.equal((await f.request('/auth/passkeys/rename',{method:'POST',body:{id,name:'My laptop'},headers:{'x-csrf-token':'wrong'}})).response.status,403);
+ assert.equal((await f.request('/auth/passkeys/rename',{method:'POST',body:{id,name:'x'.repeat(81)}})).response.status,400);
+ assert.equal((await f.request('/auth/passkeys/rename',{method:'POST',body:{id:'another-credential',name:'Denied'}})).response.status,401);
+ assert.equal((await f.request('/auth/passkeys/rename',{method:'POST',body:{id,name:'حاسوب العمل'}})).response.status,200);
+ assert.equal((await f.request('/auth/passkeys')).value.passkeys[0].name,'حاسوب العمل');
+ assert.ok(!JSON.stringify(f.repo.auditRecords()).includes('حاسوب العمل'));
+ assert.equal((await f.request('/auth/passkeys/remove',{method:'POST',body:{id}})).response.status,200);
+ assert.deepEqual((await f.request('/auth/passkeys')).value.passkeys,[]);
 });

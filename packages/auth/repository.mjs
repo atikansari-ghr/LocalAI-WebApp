@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { openState } from '../database/index.mjs';
 import { equalSecret } from './crypto.mjs';
+import { normalizePasskeyName } from './passkey-name.mjs';
 export function openSecurityRepository(path){
  openState(path).close();
  const db=new DatabaseSync(path,{timeout:5000,enableForeignKeyConstraints:true,allowExtension:false});
@@ -102,13 +103,21 @@ export function openSecurityRepository(path){
    db.prepare('DELETE FROM auth_challenges WHERE id=?').run(id);
    return row.kind===kind&&row.expires>now&&row.session_hash===sessionHash?row:null;
   });},
-  passkeysForUser:id=>db.prepare('SELECT id,transports FROM passkeys WHERE user_id=?').all(id),
+  passkeysForUser:id=>db.prepare("SELECT p.id,p.transports,COALESCE(json_extract(s.value,'$.name'),'') AS name FROM passkeys p LEFT JOIN settings s ON s.key='auth.passkey-label.'||p.id WHERE p.user_id=?").all(id),
   passkey:id=>db.prepare('SELECT * FROM passkeys WHERE id=?').get(id),
-  removePasskey(userId,id,now){return transaction(()=>{if(db.prepare('DELETE FROM passkeys WHERE user_id=? AND id=?').run(userId,id).changes!==1)throw new Error('Unknown credential');audit(now,'passkey_removed',userId,userId,'success');});},
-  registerPasskey(userId,credential,sessionHash,now){return transaction(()=>{
+  removePasskey(userId,id,now){return transaction(()=>{if(db.prepare('DELETE FROM passkeys WHERE user_id=? AND id=?').run(userId,id).changes!==1)throw new Error('Unknown credential');db.prepare('DELETE FROM settings WHERE key=?').run('auth.passkey-label.'+id);audit(now,'passkey_removed',userId,userId,'success');});},
+  renamePasskey(userId,id,name,now){return transaction(()=>{
+   name=normalizePasskeyName(name);
+   if(!db.prepare('SELECT 1 FROM passkeys WHERE user_id=? AND id=?').get(userId,id))throw new Error('Unknown credential');
+   db.prepare("INSERT INTO settings(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')").run('auth.passkey-label.'+id,JSON.stringify({name}));
+   audit(now,'passkey_renamed',userId,userId,'success');
+  });},
+  registerPasskey(userId,credential,sessionHash,now,name=''){return transaction(()=>{
+   name=normalizePasskeyName(name);
    const session=db.prepare('SELECT * FROM sessions WHERE token_hash=? AND user_id=?').get(sessionHash,userId),user=userById(userId);
    if(!session||session.expires<=now||session.last_seen+30*60000<=now||session.step_up+5*60000<now||user?.status!=='active')throw new Error('Fresh session required');
    db.prepare('INSERT INTO passkeys(id,user_id,public_key,counter,transports) VALUES (?,?,?,?,?)').run(credential.id,userId,credential.publicKey,credential.counter,JSON.stringify(credential.transports??[]));
+   if(name)db.prepare('INSERT INTO settings(key,value) VALUES (?,?)').run('auth.passkey-label.'+credential.id,JSON.stringify({name}));
    audit(now,'passkey_registered',userId,userId,'success');
   });},
   passkeyLogin({credentialId,expectedCounter,counter,session,now}){return transaction(()=>{

@@ -3,6 +3,7 @@ import { isoCBOR } from '@simplewebauthn/server/helpers';
 import { isIP } from 'node:net';
 import { newToken,tokenDigest } from './crypto.mjs';
 import { AuthError } from './service.mjs';
+import { normalizePasskeyName } from './passkey-name.mjs';
 
 export function createPasskeyService({repo,auth,rpId,origin,now=Date.now}){
  const site=new URL(origin);
@@ -17,7 +18,9 @@ export function createPasskeyService({repo,auth,rpId,origin,now=Date.now}){
    const options=await generateRegistrationOptions({rpName:'Local AI',rpID:rpId,userName:user.username,userID:new TextEncoder().encode(user.id),attestationType:'none',supportedAlgorithmIDs:[-7,-257,-8],excludeCredentials:repo.passkeysForUser(user.id).map(p=>({id:p.id,transports:JSON.parse(p.transports)})),authenticatorSelection:{residentKey:'required',userVerification:'required'}});
    return {id:save('registration',options.challenge,user.id,token),options};
   },
-  async register(token,csrf,id,response){
+  rename(token,csrf,id,name){const user=auth.requireFreshSession(token,csrf),label=normalizePasskeyName(name);try{repo.renamePasskey(user.id,id,label,now());}catch{throw new AuthError();}return {ok:true};},
+  async register(token,csrf,id,response,name=''){
+   name=normalizePasskeyName(name);
    try{
     const user=auth.requireFreshSession(token,csrf),challenge=repo.consumeChallenge(id,'registration',now(),tokenDigest(token));bounded(response);
     if(!challenge||challenge.user_id!==user.id)throw new AuthError();
@@ -27,7 +30,7 @@ export function createPasskeyService({repo,auth,rpId,origin,now=Date.now}){
     const result=await verifyRegistrationResponse({response,expectedChallenge:challenge.challenge,expectedOrigin:origin,expectedRPID:rpId,requireUserVerification:true,supportedAlgorithmIDs:[-7,-257,-8]});
     if(!result.verified||!result.registrationInfo.userVerified)throw new AuthError();
     auth.requireFreshSession(token,csrf);
-    repo.registerPasskey(user.id,result.registrationInfo.credential,tokenDigest(token),now());
+    repo.registerPasskey(user.id,result.registrationInfo.credential,tokenDigest(token),now(),name);
     return {id:result.registrationInfo.credential.id};
    }catch{throw new AuthError();}
   },
