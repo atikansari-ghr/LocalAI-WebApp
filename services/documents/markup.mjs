@@ -43,24 +43,24 @@ function xmlText(text,limit){
  while(index<text.length){
   if(text[index]!=='<'){
    let end=text.indexOf('<',index);if(end<0)end=text.length;const value=decodeXmlText(text.slice(index,end));
-   if(value.trim()){result.boundary();result.add(value,source(index,end));}index=end;continue;
+   if(stack.length)result.add(value,source(index,end));index=end;continue;
   }
   if(text.startsWith('<!--',index)){index=text.indexOf('-->',index)+3;continue;}
   if(text.startsWith('<?',index)){index=text.indexOf('?>',index)+2;continue;}
   if(text.startsWith('<![CDATA[',index)){
-   const start=index+9,end=text.indexOf(']]>',start);result.boundary();result.add(text.slice(start,end).replace(/\r\n?/g,'\n'),source(start,end));index=end+3;continue;
+   const start=index+9,end=text.indexOf(']]>',start);result.add(text.slice(start,end).replace(/\r\n?/g,'\n'),source(start,end));index=end+3;continue;
   }
   let end=index+1,quote=null;
   for(;end<text.length;end++){const char=text[end];if(quote){if(char===quote)quote=null;}else if(char==='"'||char==="'")quote=char;else if(char==='>')break;}
   const tag=text.slice(index,end+1);
   if(tag.startsWith('</'))stack.pop();
   else{
-   const name=tag.match(/^<([^\s/>]+)/u)[1],siblings=stack.at(-1)?.children??roots,ordinal=(siblings.get(name)??0)+1;siblings.set(name,ordinal);
+   const name=tag.match(/^<([^\u0009\u000a\u000d\u0020/>]+)/u)[1],siblings=stack.at(-1)?.children??roots,ordinal=(siblings.get(name)??0)+1;siblings.set(name,ordinal);
    if(!tag.endsWith('/>'))stack.push({path:(stack.at(-1)?.path??'')+'/'+name+'['+ordinal+']',children:new Map()});
   }
   index=end+1;
  }
- return {text:result.parts.join('').trim(),units:result.units,warnings:['xml_source_order_not_rendered','xml_external_references_not_resolved']};
+ return {text:result.parts.join(''),units:result.units,warnings:['xml_source_order_not_rendered','xml_external_references_not_resolved']};
 }
 export function parseMarkupDocument(input,limits={}){
  const document=inspectDocument(input,limits);if(!['html','xml'].includes(document.format))fail('parser_unavailable');

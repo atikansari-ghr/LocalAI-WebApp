@@ -17,6 +17,11 @@ test('XML extraction validates namespaces and preserves source spans paths CDATA
  assert.equal(result.units[0].source.path,'/r[1]/x:name[1]');assert.equal(result.units[1].source.path,'/r[1]/x:name[2]');
  assert.equal(xml.slice(result.units[0].source.start,result.units[0].source.end),'مرحبا &amp; العالم');assert.equal(xml.slice(result.units[1].source.start,result.units[1].source.end),'<literal>');
  for(const value of ['<r><a></r>','<r>&unknown;</r>','<r/><second/>','<r>','<x:r/>'])assert.throws(()=>parseMarkupDocument(input('bad.xml',value)),/invalid_xml/);
+ for(const value of ['<r>hel<!-- comment -->lo</r>','<r>hel<![CDATA[lo]]></r>','<r>hel<b>lo</b></r>'])assert.equal(parseMarkupDocument(input('continuity.xml',value)).text,'hello');
+ assert.equal(parseMarkupDocument(input('spaces.xml','<r><b>hello</b> <i>world</i></r>')).text,'hello world');
+ assert.equal(parseMarkupDocument(input('preserve.xml','<r xml:space="preserve"> hello </r>')).text,' hello ');
+ const unicode=parseMarkupDocument(input('names.xml','<r\u1680x><a>one</a><a>two</a></r\u1680x>'));
+ assert.equal(unicode.units[0].source.path,'/r\u1680x[1]/a[1]');assert.equal(unicode.units[1].source.path,'/r\u1680x[1]/a[2]');
 });
 test('markup parsers enforce depth node attribute and output boundaries',()=>{
  for(const name of ['deep.xml','deep.html'])assert.throws(()=>parseMarkupDocument(input(name,'<div>'.repeat(40)+'text'+'</div>'.repeat(40))),/structure_limit/);
