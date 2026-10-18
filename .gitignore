@@ -1,0 +1,7 @@
+node_modules/
+.localai/
+coverage/
+artifacts/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm

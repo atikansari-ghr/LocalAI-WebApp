@@ -1,0 +1,26 @@
+[
+  {
+    "env": "LOCALAI_HOST",
+    "key": "host",
+    "default": "127.0.0.1",
+    "type": "loopback",
+    "help": "Gateway listen address. Foundation permits loopback only until authentication and TLS are implemented.",
+    "anchor": "gateway-host"
+  },
+  {
+    "env": "LOCALAI_PORT",
+    "key": "port",
+    "default": 1234,
+    "type": "port",
+    "help": "Gateway port. Default 1234; valid range 1–65535. Only one service can use the selected port.",
+    "anchor": "gateway-port"
+  },
+  {
+    "env": "LOCALAI_STATE_DIR",
+    "key": "stateDir",
+    "default": ".localai",
+    "type": "path",
+    "help": "Private writable state directory. Use /var/lib/localai under systemd; never serve it as web content.",
+    "anchor": "state-directory"
+  }
+]
