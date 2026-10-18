@@ -12,3 +12,9 @@ test('configuration rejects unsafe binds, typos and malformed ports', () => {
   }
   assert.equal(loadConfig({LOCALAI_HOST:'::1',LOCALAI_PORT:'4321'}).port,4321);
 });
+test('proxy browser mode requires an exact HTTPS origin and explicit trusted peers',()=>{
+ const env={LOCALAI_HOST:'192.168.10.214',LOCALAI_TRANSPORT:'proxy',LOCALAI_ORIGIN:'https://localai.ansariz.biz',LOCALAI_TRUSTED_PROXIES:'192.168.10.245/32'};
+ assert.equal(loadConfig(env).origin,'https://localai.ansariz.biz');
+ assert.deepEqual(loadConfig(env).trustedProxies,['192.168.10.245/32']);
+ for(const change of [{LOCALAI_ORIGIN:'http://localai.ansariz.biz'},{LOCALAI_ORIGIN:'https://localai.ansariz.biz/path'},{LOCALAI_TRUSTED_PROXIES:''},{LOCALAI_TRUSTED_PROXIES:'0.0.0.0/0'},{LOCALAI_TRANSPORT:'unknown'}])assert.throws(()=>loadConfig({...env,...change}));
+});

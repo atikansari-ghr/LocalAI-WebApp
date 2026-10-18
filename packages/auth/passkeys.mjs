@@ -14,7 +14,7 @@ export function createPasskeyService({repo,auth,rpId,origin,now=Date.now}){
  return {
   async registrationOptions(token,csrf){
    const user=auth.requireFreshSession(token,csrf);
-   const options=await generateRegistrationOptions({rpName:'Local AI',rpID:rpId,userName:user.username,userID:new TextEncoder().encode(user.id),attestationType:'none',supportedAlgorithmIDs:[-7,-257,-8],excludeCredentials:repo.passkeysForUser(user.id).map(p=>({id:p.id,transports:JSON.parse(p.transports)})),authenticatorSelection:{residentKey:'preferred',userVerification:'required'}});
+   const options=await generateRegistrationOptions({rpName:'Local AI',rpID:rpId,userName:user.username,userID:new TextEncoder().encode(user.id),attestationType:'none',supportedAlgorithmIDs:[-7,-257,-8],excludeCredentials:repo.passkeysForUser(user.id).map(p=>({id:p.id,transports:JSON.parse(p.transports)})),authenticatorSelection:{residentKey:'required',userVerification:'required'}});
    return {id:save('registration',options.challenge,user.id,token),options};
   },
   async register(token,csrf,id,response){
@@ -31,15 +31,15 @@ export function createPasskeyService({repo,auth,rpId,origin,now=Date.now}){
     return {id:result.registrationInfo.credential.id};
    }catch{throw new AuthError();}
   },
-  async authenticationOptions(ip){
+  async authenticationOptions(ip,binding=null){
    auth.guard('passkey_options',ip);
    const options=await generateAuthenticationOptions({rpID:rpId,userVerification:'required'});
-   return {id:save('authentication',options.challenge),options};
+   return {id:save('authentication',options.challenge,null,binding),options};
   },
-  async authenticate(id,response,ip){
+  async authenticate(id,response,ip,binding=null){
    auth.guard('passkey_login',ip);
    try{
-    const challenge=repo.consumeChallenge(id,'authentication',now());bounded(response);
+    const challenge=repo.consumeChallenge(id,'authentication',now(),binding?tokenDigest(binding):null);bounded(response);
     if(!challenge)throw new AuthError();
     const credential=repo.passkey(response.id);if(!credential)throw new AuthError();
     auth.guardAccount(credential.user_id);

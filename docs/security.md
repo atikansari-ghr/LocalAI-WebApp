@@ -1,9 +1,15 @@
 # Security core — phase 2 in progress
 
-These modules are under development and are not exposed through the deployed foundation gateway. No browser login, setup page, transport configuration or public application API has been enabled. Full phase 2 acceptance requires those flows and their target/browser checks.
+These modules are under development. Browser routes are implemented for explicitly configured HTTPS transport; the deployed foundation remains on loopback until target/browser checks pass. A public application inference API is not implemented. Full phase 2 acceptance remains blocked on browser, transport and recovery qualification.
 
 ## Identity and setup
-There is no default account. The service layer issues random 256-bit one-time setup codes with 30-minute expiry. Claiming a valid code creates a pending administrator; a 10-minute enrollment token and TOTP verification activate it. Concurrent claims are serialized in SQLite. A root recovery tool may reissue setup only before initialization, removing the abandoned pending account. The CLI and browser flows are still pending.
+There is no default account. The service layer issues random 256-bit one-time setup codes with 30-minute expiry. Claiming a valid code creates a pending administrator; a 10-minute enrollment token and TOTP verification activate it. Concurrent claims are serialized in SQLite. The operator may reissue setup only before initialization, removing the abandoned pending account. After configuring and verifying HTTPS, an operator can run:
+
+```sh
+sudo -u localai /opt/localai/node/bin/node /opt/localai/current/scripts/setup-code.mjs --config /etc/localai/gateway.env
+```
+
+Keep the printed code private and enter it at the configured origin's /setup page within 30 minutes. Run as the service account so new state files retain correct ownership. The tool refuses to reset a configured administrator. TOTP enrollment requires an authenticator app; recovery codes are displayed once after verification. No password or enrollment/session token is returned through a URL. Account and vault recovery after completed setup remain pending operational features.
 
 Passwords use Node's scrypt implementation with N=32768, r=8, p=3, unique 128-bit salts and 64-byte outputs. This matches the 32 MiB profile in the [OWASP password storage guidance](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html). Passwords require at least 12 characters and at most 1024 UTF-8 bytes. Malformed stored parameters cannot force arbitrary KDF costs.
 
@@ -12,7 +18,7 @@ TOTP uses SHA-1, six digits and a 30-second step with one adjacent step of toler
 Source attempts use normalized IP addresses and five-attempt/15-minute persistent buckets. A separate five-attempt/15-minute account/enrollment budget is shared across login, MFA enrollment, step-up and known passkey verification, so rotating source addresses cannot bypass it. A successful verified authentication resets that identity's failure budget. A locked identity waits for the window; no unauthenticated unlock route exists. Administrative lockout/recovery controls remain part of the pending UI/CLI task.
 
 ## Sessions and permissions
-Session tokens have 256-bit entropy and only SHA256 verification digests persist. Absolute lifetime is eight hours; idle timeout is 30 minutes. Privileged actions require a fresh MFA-backed session within five minutes and the session-bound HMAC CSRF token. Browser origin checks and secure cookie delivery still require the HTTP integration task. These service checks alone are not complete CSRF protection for a web application.
+Session tokens have 256-bit entropy and only SHA256 verification digests persist. Absolute lifetime is eight hours; idle timeout is 30 minutes. Privileged actions require a fresh MFA-backed session within five minutes and the session-bound HMAC CSRF token. Browser routes require the exact configured Host, HTTPS from the configured transport, and exact Origin plus CSRF for mutations. Session, enrollment and preauthentication cookies use the __Host- prefix, Secure, HttpOnly, SameSite=Strict and Path=/. Sessions never appear in response JSON. Requests have bounded headers, body size and timeouts. Browser acceptance is still pending; service tests alone do not qualify a deployed web application.
 
 The implemented administrator boundary protects application provisioning, rotation and revocation. General user/group management and the complete RBAC control surface remain pending. Password, TOTP and passkey login methods are separate from application credentials.
 

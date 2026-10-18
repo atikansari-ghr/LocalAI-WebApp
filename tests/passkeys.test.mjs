@@ -36,6 +36,8 @@ test('WebAuthn verifies a real signed assertion and denies replay forged signatu
  const admin=auth.completeSetup({enrollmentToken:pending.enrollmentToken,code:totp(pending.totpSecret,now),ip:'127.0.0.1'});
  const passkeys=createPasskeyService({repo,auth,rpId,origin,now:()=>now}),device=authenticator();
  const registration=await passkeys.registrationOptions(admin.token,admin.csrf);
+ assert.equal(registration.options.authenticatorSelection.residentKey,'required');
+ assert.equal(registration.options.authenticatorSelection.requireResidentKey,true);
  await passkeys.register(admin.token,admin.csrf,registration.id,device.registration(registration.options.challenge));
  const login=await passkeys.authenticationOptions('127.0.0.1');
  const response=device.authentication(login.options.challenge);
@@ -47,6 +49,10 @@ test('WebAuthn verifies a real signed assertion and denies replay forged signatu
  await assert.rejects(passkeys.authenticate(forged.id,bad,'127.0.0.1'));
  const cross=await passkeys.authenticationOptions('127.0.0.1');
  await assert.rejects(passkeys.authenticate(cross.id,device.authentication(cross.options.challenge,2,'https://evil.test'),'127.0.0.1'));
+ const bound=await passkeys.authenticationOptions('192.0.2.50','browser-a');
+ await assert.rejects(passkeys.authenticate(bound.id,device.authentication(bound.options.challenge,2),'192.0.2.50','browser-b'));
+ const own=await passkeys.authenticationOptions('192.0.2.51','browser-a');
+ assert.equal((await passkeys.authenticate(own.id,device.authentication(own.options.challenge,2),'192.0.2.51','browser-a')).user.id,admin.user.id);
  const expired=await passkeys.authenticationOptions('192.0.2.1');now+=6*60000;
  await assert.rejects(passkeys.authenticate(expired.id,device.authentication(expired.options.challenge,2),'192.0.2.1'));
 });

@@ -82,6 +82,7 @@ export function openSecurityRepository(path){
   });},
   applicationByKey:hash=>db.prepare('SELECT * FROM applications WHERE key_hash=?').get(hash),
   applicationById:id=>db.prepare('SELECT * FROM applications WHERE id=?').get(id),
+  listApplications:()=>db.prepare('SELECT id,name,capabilities,networks,scopes,expires,enabled FROM applications ORDER BY name').all().map(row=>({...row,capabilities:JSON.parse(row.capabilities),networks:JSON.parse(row.networks),scopes:JSON.parse(row.scopes)})),
   rotateApplication(id,keyHash,actor,now){return transaction(()=>{
    if(db.prepare('UPDATE applications SET key_hash=? WHERE id=?').run(keyHash,id).changes!==1)throw new Error('Unknown application');
    audit(now,'application_key_rotated',actor,id,'success');
@@ -103,6 +104,7 @@ export function openSecurityRepository(path){
   });},
   passkeysForUser:id=>db.prepare('SELECT id,transports FROM passkeys WHERE user_id=?').all(id),
   passkey:id=>db.prepare('SELECT * FROM passkeys WHERE id=?').get(id),
+  removePasskey(userId,id,now){return transaction(()=>{if(db.prepare('DELETE FROM passkeys WHERE user_id=? AND id=?').run(userId,id).changes!==1)throw new Error('Unknown credential');audit(now,'passkey_removed',userId,userId,'success');});},
   registerPasskey(userId,credential,sessionHash,now){return transaction(()=>{
    const session=db.prepare('SELECT * FROM sessions WHERE token_hash=? AND user_id=?').get(sessionHash,userId),user=userById(userId);
    if(!session||session.expires<=now||session.last_seen+30*60000<=now||session.step_up+5*60000<now||user?.status!=='active')throw new Error('Fresh session required');

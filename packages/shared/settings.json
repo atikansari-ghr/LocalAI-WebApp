@@ -3,8 +3,8 @@
     "env": "LOCALAI_HOST",
     "key": "host",
     "default": "127.0.0.1",
-    "type": "loopback",
-    "help": "Gateway listen address. Foundation permits loopback only until authentication and TLS are implemented.",
+    "type": "address",
+    "help": "Listen IP. Default loopback. A network bind requires HTTPS transport or an explicitly trusted HTTPS proxy.",
     "anchor": "gateway-host"
   },
   {
@@ -22,5 +22,10 @@
     "type": "path",
     "help": "Private writable state directory. Use /var/lib/localai under systemd; never serve it as web content.",
     "anchor": "state-directory"
-  }
+  },
+  {"env":"LOCALAI_TRANSPORT","key":"transport","default":"loopback","type":"transport","help":"loopback keeps the health-only foundation. proxy requires trusted HTTPS peers; tls requires certificate files.","anchor":"secure-transport"},
+  {"env":"LOCALAI_ORIGIN","key":"origin","default":"","type":"origin","help":"Exact canonical HTTPS browser origin, without a trailing slash. Passkeys bind to this hostname.","anchor":"browser-origin"},
+  {"env":"LOCALAI_TRUSTED_PROXIES","key":"trustedProxies","default":"","type":"networks","help":"Comma-separated proxy IPs/CIDRs. Only these peers may supply forwarded addresses and HTTPS status. Never trust the whole Internet.","anchor":"trusted-proxies"},
+  {"env":"LOCALAI_TLS_CERT","key":"tlsCert","default":"","type":"optionalPath","help":"PEM certificate chain for direct TLS. Must be readable by the service. Not used with proxy TLS.","anchor":"tls-certificate"},
+  {"env":"LOCALAI_TLS_KEY","key":"tlsKey","default":"","type":"optionalPath","help":"Protected PEM private-key file for direct TLS; never send it through the UI or include it in diagnostics.","anchor":"tls-private-key"}
 ]
