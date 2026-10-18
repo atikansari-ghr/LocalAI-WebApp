@@ -107,6 +107,9 @@ deployment="/opt/localai/releases/$revision"
 if [[ ! -d $deployment ]]; then
   mkdir "$stage/source"
   git -C "$source_root" archive HEAD | tar -xf - -C "$stage/source"
+  if [[ -f "$stage/source/package-lock.json" ]]; then
+    PATH="$runtime/bin:$PATH" "$runtime/bin/npm" ci --prefix "$stage/source" --omit=dev --ignore-scripts --no-audit
+  fi
   chmod -R u=rwX,go=rX "$stage/source"
   mv "$stage/source" "$deployment"
 fi
