@@ -1,0 +1,23 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync,rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { issueSetupCode } from '../scripts/setup-code.mjs';
+import { openSecurityRepository } from '../packages/auth/repository.mjs';
+import { createAuthService } from '../packages/auth/service.mjs';
+import { openVault,totp } from '../packages/auth/crypto.mjs';
+test('operator setup codes rotate and cannot reset a configured administrator',async t=>{
+ const dir=mkdtempSync(join(tmpdir(),'localai-setup-cli-'));
+ let repo;
+ t.after(()=>{repo?.close();rmSync(dir,{recursive:true,force:true});});
+ const first=issueSetupCode(dir),second=issueSetupCode(dir);
+ assert.notEqual(first,second);assert.match(second,/^[A-Za-z0-9_-]{43}$/);
+ repo=openSecurityRepository(join(dir,'platform.sqlite'));
+ const auth=createAuthService({repo,vault:openVault(join(dir,'master.key'))});
+ await assert.rejects(auth.beginSetup({code:first,username:'admin',password:'correct horse battery staple',ip:'127.0.0.1'}));
+ const pending=await auth.beginSetup({code:second,username:'admin',password:'correct horse battery staple',ip:'127.0.0.1'});
+ auth.completeSetup({enrollmentToken:pending.enrollmentToken,code:totp(pending.totpSecret),ip:'127.0.0.1'});
+ assert.throws(()=>issueSetupCode(dir));
+ assert.equal(repo.state().status,'ready');
+});

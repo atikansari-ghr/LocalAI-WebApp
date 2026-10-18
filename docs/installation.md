@@ -9,7 +9,7 @@ npm test
 npm run check:docs
 npm start
 ```
-No npm packages are required. The gateway binds 127.0.0.1:1234 and writes private SQLite state under .localai. It exposes GET /health/live and GET /health/ready only. Readiness intentionally returns 503 until the remaining platform is implemented. No unauthenticated Admin or Workspace UI is served.
+For the security development branch, run `npm ci --ignore-scripts` before testing to install the locked WebAuthn dependency graph. The gateway binds 127.0.0.1:1234 and writes private SQLite state under .localai. It exposes GET /health/live and GET /health/ready only. Readiness intentionally returns 503 until the remaining platform is implemented. No unauthenticated Admin or Workspace UI is served.
 
 ## Debian foundation evaluation
 Use a disposable Debian 13 Proxmox LXC with 4 vCPU, 6 GB RAM and 100 GB disk; root, running systemd and Git are required. Clone and inspect the intended feature commit before executing:
@@ -35,7 +35,9 @@ curl --noproxy '*' http://127.0.0.1:1234/health/ready
 Liveness 200 proves only a running gateway; readiness 503 is expected for this incomplete phase. A port conflict, invalid configuration, migration checksum drift or unwritable/corrupt database prevents startup. Do not delete state or modify already-applied migration files to suppress errors.
 
 ## Recovery boundaries
-A failed activation attempts to restore previous code, runtime link and service unit together using a protected journal at /opt/localai/activation.json. The journal is written before activation, and a later installer run recovers an interrupted activation. Health checks use the configured host/port and require the responding gateway PID to match systemd's MainPID. The installer preserves state. Automatic code rollback is not a guarantee of schema rollback. The initial migration is additive; future migrations require tested downgrade/restore procedures before installation is accepted.
+A failed activation attempts to restore previous code, runtime link and service unit together using a protected journal at /opt/localai/activation.json. The journal is written before activation, and a later installer run recovers an interrupted activation. Health checks use the configured transport/host/port and require the responding gateway PID to match systemd's MainPID. Direct TLS additionally validates the configured certificate trust and DNS origin hostname. The installer preserves state. Automatic code rollback is not a guarantee of schema rollback.
+
+For an existing database, the installer now checks persisted migration history against both installed and candidate manifests before activation. A changed, added or removed migration blocks the update before the running service is stopped or the schema is changed. This deliberately blocks schema transitions until the separate schema recovery procedure is implemented and qualified. It is not a migration rollback implementation. First installations without an existing database are supported; restoring/importing an existing database with unknown or incompatible history requires a separately validated recovery process. Do not delete a database or edit migration files to get around this gate.
 
 For a database restore: stop the service, preserve the current database plus WAL/SHM together in a protected recovery directory, verify the chosen backup offline, and restore it to a separate test directory first. Never overwrite a live database. Full automated encrypted backup, isolated restore and tombstone replay remain later-phase work.
 

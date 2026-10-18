@@ -107,9 +107,14 @@ deployment="/opt/localai/releases/$revision"
 if [[ ! -d $deployment ]]; then
   mkdir "$stage/source"
   git -C "$source_root" archive HEAD | tar -xf - -C "$stage/source"
+  if [[ -f "$stage/source/package-lock.json" ]]; then
+    PATH="$runtime/bin:$PATH" "$runtime/bin/npm" ci --prefix "$stage/source" --omit=dev --ignore-scripts --no-audit
+  fi
   chmod -R u=rwX,go=rX "$stage/source"
   mv "$stage/source" "$deployment"
 fi
+# Reject unsupported schema transitions before activation can mutate live state.
+runuser -u localai -- "$runtime/bin/node" "$deployment/installer/migration-gate.mjs" /etc/localai/gateway.env /opt/localai/current/migrations "$deployment/migrations"
 # Back up the actual configured database read-only, before any new migration is applied.
 runuser -u localai -- "$runtime/bin/node" "$deployment/installer/lifecycle.mjs" backup /etc/localai/gateway.env
 activation_started=1
@@ -121,7 +126,7 @@ systemctl restart localai.service
 for attempt in {1..15}; do
   if probe_service; then
     "$runtime/bin/node" "$source_root/installer/activation.mjs" commit "$journal"
-    echo "Foundation installed. Service PID and configured loopback liveness passed; platform readiness and production release remain BLOCKED."
+    echo "Preview installed. Service PID and configured transport liveness passed; platform readiness and production release remain BLOCKED."
     exit 0
   fi
   sleep 1

@@ -11,5 +11,8 @@
     "check:docs": "node scripts/check-docs.mjs",
     "start": "node apps/gateway/main.mjs",
     "release:check": "node scripts/release-gate.mjs"
+  },
+  "dependencies": {
+    "@simplewebauthn/server": "14.0.3"
   }
 }
