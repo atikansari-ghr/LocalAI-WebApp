@@ -25,6 +25,11 @@ function validateAsset(asset){
  return asset;
 }
 function freeze(value){if(value&&typeof value==='object'){for(const child of Object.values(value))freeze(child);Object.freeze(value);}return value;}
+export function validateFallbackModel(value){
+ validateAsset(value);
+ if(value.id!=='chat-fallback'||value.kind!=='model'||value.task!=='chat'||value.modelId!=='localai-chat-fallback'||value.contextTokens>2048)throw new Error('Bounded chat fallback required');
+ return freeze(structuredClone(value));
+}
 export function validateStarterManifest(value){
  keys(value,['schemaVersion','checkedAt','platform','qualification','assets']);
  if(value.schemaVersion!==1||value.platform!=='linux-x64'||value.qualification!=='pending-real-target-tests'||!/^\d{4}-\d{2}-\d{2}$/.test(value.checkedAt)||!Array.isArray(value.assets)||value.assets.length!==3)throw new Error('Unsupported starter manifest');

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {buildWorkerArguments,renderWorkerUnit} from '../services/inference/native.mjs';
+import {buildWorkerArguments,renderWorkerUnit,buildChatRouterArguments,renderChatRouterPresets,renderChatRouterUnit} from '../services/inference/native.mjs';
 
 const paths={model:'/var/lib/localai-models/hash/model.gguf',credential:'/run/credentials/localai-chat.service/ai-backend-key'};
 test('workers use private CPU inference with bounded resources and no prompt logging',()=>{
@@ -19,6 +19,12 @@ test('embedding worker uses last pooling and bounded batches on a separate priva
  assert.equal(value('--ctx-size'),'2048');assert.equal(value('--ubatch-size'),'256');
  assert.equal(value('--threads'),'1');
 });
+test('workers unload idle models by default and allow only bounded operator sleep intervals',()=>{
+ const args=buildWorkerArguments('chat',paths);assert.equal(args[args.indexOf('--sleep-idle-seconds')+1],'900');
+ const short=buildWorkerArguments('embedding',paths,{idleSeconds:5});assert.equal(short[short.indexOf('--sleep-idle-seconds')+1],'5');
+ for(const idleSeconds of [-1,0,4,86401,NaN,'900'])assert.throws(()=>buildWorkerArguments('chat',paths,{idleSeconds}));
+ assert.throws(()=>buildWorkerArguments('chat',paths,{host:'0.0.0.0'}));
+});
 test('worker arguments reject external binds, arbitrary overrides and unsafe or missing paths',()=>{
  for(const profile of ['other',null,{}])assert.throws(()=>buildWorkerArguments(profile,paths));
  for(const model of ['', '../model.gguf','/tmp/a\nmodel','/tmp/a%model','C:/model.gguf'])assert.throws(()=>buildWorkerArguments('chat',{...paths,model}));
@@ -33,4 +39,12 @@ test('native units isolate gateway secrets and enforce aggregate slice membershi
  assert.ok(unit.includes('MemorySwapMax=0'));
  assert.ok(!unit.includes(paths.credential));
  assert.throws(()=>renderWorkerUnit('chat',{...paths,runtime:'/tmp/a%PATH'}));
+});
+test('local fallback router loads at most one known chat model within the same isolated service budget',()=>{
+ const options={preset:'/opt/localai/ai/router/models.ini',credential:paths.credential},args=buildChatRouterArguments(options);
+ assert.equal(args[args.indexOf('--models-max')+1],'1');assert.equal(args[args.indexOf('--models-preset')+1],options.preset);assert.ok(!args.includes('--model'));assert.ok(args.includes('--offline'));
+ const preset=renderChatRouterPresets({primary:'/var/lib/localai-models/hash/primary.gguf',fallback:'/var/lib/localai-models/hash/fallback.gguf'});
+ assert.ok(preset.includes('[localai-chat]'));assert.ok(preset.includes('[localai-chat-fallback]'));assert.ok(!preset.includes('hf-repo'));
+ assert.throws(()=>renderChatRouterPresets({primary:'/tmp/a\n[malicious]',fallback:'/tmp/model.gguf'}));
+ const unit=renderChatRouterUnit({runtime:'/opt/localai/ai/runtimes/llama-b11669',...options});assert.ok(unit.includes('MemoryMax=4G'));assert.ok(unit.includes('--models-max 1'));assert.ok(unit.includes('User=localai-inference'));
 });

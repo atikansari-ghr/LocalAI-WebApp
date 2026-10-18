@@ -44,7 +44,7 @@ run('chown',['root:localai-inference','/var/lib/localai-models']);run('chmod',['
 for(const profile of ['chat','embedding']){
  const model=candidate.assets.find(a=>a.id===profile).path,dir=model.slice(0,model.lastIndexOf('/'));
  run('chown',['root:localai-inference',dir,model]);run('chmod',['0750',dir]);run('chmod',['0640',model]);
- const unit=renderWorkerUnit(profile,{runtime,model,credential:'/run/credentials/placeholder/ai-backend-key'});
+ const unit=renderWorkerUnit(profile,{runtime,model,credential:'/run/credentials/placeholder/ai-backend-key'},{idleSeconds:5});
  const file='/etc/systemd/system/localai-'+profile+'.service';
  if(existsSync(file)&&readFileSync(file,'utf8')!==unit)throw new Error('Existing worker unit differs; update/recovery qualification required');
  writeFileSync(file,unit,{mode:0o644});
@@ -95,10 +95,34 @@ try{
  const embedded=await client.embeddings({input:['A family document.','وثيقة عائلية.']});assert.equal(embedded.data.length,2);
  await assert.rejects(client.chat({messages:[{role:'user',content:'hello '.repeat(5000)}],max_tokens:32}),/context/);
  const cancellation=new AbortController();let chunks=0;
- await assert.rejects(client.chat({messages:[{role:'user',content:'Write a long story about a forest.'}],stream:true,max_tokens:1024},{signal:cancellation.signal,onChunk:chunk=>{const event=JSON.parse(Buffer.from(chunk).toString().slice(6));if(event.choices?.[0]?.delta?.content){chunks++;cancellation.abort();}}}));
+ await assert.rejects(client.chat({messages:[{role:'user',content:'Write a long story about a forest.'}],stream:true,max_tokens:512},{signal:cancellation.signal,onChunk:chunk=>{const event=JSON.parse(Buffer.from(chunk).toString().slice(6));if(event.choices?.[0]?.delta?.content){chunks++;cancellation.abort();}}}));
  assert.ok(chunks>0);assert.equal(client.busy,false);
  const afterCancel=await client.chat({messages:[{role:'user',content:'Reply with the word ready.'}],max_tokens:16});assert.ok(afterCancel.choices[0].message.content);
  checks.push({check:'gateway-adapter-real-tokenizer-context-cancellation-and-reuse'});
+ // Sleep unloads model contexts without granting the gateway service-management privileges.
+ const workerPid=profile=>run('systemctl',['show','localai-'+profile+'.service','--property=MainPID','--value']);
+ const pids={chat:workerPid('chat'),embedding:workerPid('embedding')};
+ const rss=()=>Object.values(pids).reduce((sum,pid)=>sum+Number(readFileSync('/proc/'+pid+'/status','utf8').match(/^VmRSS:\s+(\d+)/m)[1])*1024,0);
+ const loadedRss=rss();let sleeping=false;
+ for(let attempt=0;attempt<30;attempt++){
+  const statuses=await Promise.all([8081,8082].map(async port=>{const response=await fetch('http://127.0.0.1:'+port+'/props',{headers:{Authorization:'Bearer '+secret},signal:AbortSignal.timeout(2000)});assert.equal(response.status,200);return (await response.json()).is_sleeping;}));
+  if(statuses.every(value=>value===true)){sleeping=true;break;}await new Promise(resolve=>setTimeout(resolve,1000));
+ }
+ assert.ok(sleeping,'Both workers must enter idle sleep');const asleepRss=rss();assert.ok(loadedRss-asleepRss>300*1024**2,'Idle sleep must release actual resident memory');
+ const wake=await client.chat({messages:[{role:'user',content:'Reply with ready.'}],max_tokens:16});assert.ok(wake.choices[0].message.content);
+ await client.embeddings({input:'Wake-up embedding test.'});assert.equal(workerPid('chat'),pids.chat);assert.equal(workerPid('embedding'),pids.embedding);
+ checks.push({check:'idle-sleep-and-lazy-reload',testIdleSeconds:5,defaultIdleSeconds:900,loadedRss,asleepRss});
+ run('systemctl',['kill','--kill-whom=main','--signal=SIGKILL','localai-chat.service']);let restarted=false;
+ for(let attempt=0;attempt<45;attempt++){
+  try{const response=await fetch('http://127.0.0.1:8081/health',{headers:{Authorization:'Bearer '+secret},signal:AbortSignal.timeout(2000)});await response.body?.cancel();if(response.ok&&workerPid('chat')!==pids.chat){restarted=true;break;}}catch{}
+  await new Promise(resolve=>setTimeout(resolve,1000));
+ }
+ assert.ok(restarted,'Worker must recover from a terminated process');
+ const recovered=await client.chat({messages:[{role:'user',content:'Reply with ready.'}],max_tokens:16});assert.ok(recovered.choices[0].message.content);
+ assert.notEqual(workerPid('chat'),pids.chat);
+ assert.notEqual(spawnSync('runuser',['-u','localai-inference','--','test','-r','/var/lib/localai/platform.sqlite']).status,0);
+ assert.notEqual(spawnSync('runuser',['-u','localai-inference','--','test','-r','/var/lib/localai/master.key']).status,0);
+ checks.push({check:'native-worker-crash-restart-and-vault-isolation'});
  const unauthenticated=await fetch('http://127.0.0.1:8081/v1/models',{signal:AbortSignal.timeout(5000)});assert.equal(unauthenticated.status,401);await unauthenticated.body?.cancel();
  assert.equal(run('systemctl',['show','localai-ai.slice','--property=MemorySwapCurrent','--value']),'0');
  assert.equal(run('systemctl',['show','localai.service','--property=MainPID','--value']),gatewayPid);

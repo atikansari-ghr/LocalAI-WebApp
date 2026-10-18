@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
-import {createInferenceClient} from '../services/inference/client.mjs';
+import {createInferenceClient as createClient} from '../services/inference/client.mjs';
+const createInferenceClient=options=>createClient({resources:()=>({availableBytes:2*1024**3}),...options});
 
 async function fixture(t,handler){
  const server=createServer(async(req,res)=>{let raw='';for await(const chunk of req)raw+=chunk;await handler(req,res,raw?JSON.parse(raw):{});});
@@ -76,4 +77,39 @@ test('a downstream consumer stalled by backpressure cannot hold admission beyond
  const operation=client.chat({messages:[{role:'user',content:'hello'}],stream:true},{onChunk:()=>new Promise(()=>{})});
  const result=await Promise.race([operation.then(()=>false,()=>true),new Promise(resolve=>setTimeout(()=>resolve(false),500))]);
  assert.equal(result,true);assert.equal(client.busy,false);
+});
+test('selected resource profiles enforce smaller budgets and emergency pressure blocks worker requests',async t=>{
+ let requests=0,availableBytes=2*1024**3;
+ const endpoint=await fixture(t,(req,res)=>{requests++;res.end(JSON.stringify(req.url==='/apply-template'?{prompt:'formatted'}:req.url==='/tokenize'?{tokens:Array(1800).fill(1)}:{choices:[{message:{content:'ok'}}]}));});
+ const client=createInferenceClient({key:'a'.repeat(43),chatEndpoint:endpoint,mode:'eco',resources:()=>({availableBytes})});
+ await assert.rejects(client.chat({messages:[{role:'user',content:'hello'}],max_tokens:300}),/generation/);assert.equal(requests,0);
+ await client.chat({messages:[{role:'user',content:'hello'}],max_tokens:128});
+ availableBytes=700*1024**2;await assert.rejects(client.chat({messages:[{role:'user',content:'hello'}],max_tokens:128}),/context/);
+ const previous=requests;availableBytes=300*1024**2;
+ await assert.rejects(client.chat({messages:[{role:'user',content:'hello'}]}),error=>error.code==='resource_pressure'&&error.status===503);assert.equal(requests,previous);assert.equal(client.busy,false);
+});
+test('qualified local fallback uses a circuit cooldown and reports the actual model without changing user context',async t=>{
+ let now=1000,primaryAttempts=0,tokenModel;const events=[];
+ const endpoint=await fixture(t,(req,res,body)=>{
+  if(body.model==='localai-chat'&&req.url==='/apply-template'){primaryAttempts++;res.statusCode=503;return res.end('{}');}
+  if(req.url==='/apply-template')return res.end(JSON.stringify({prompt:'formatted'}));
+  if(req.url==='/tokenize'){tokenModel=body.model;return res.end(JSON.stringify({tokens:[1]}));}
+  res.end(JSON.stringify({choices:[{message:{content:'fallback answer'}}]}));
+ });
+ const client=createInferenceClient({key:'a'.repeat(43),chatEndpoint:endpoint,fallbackEnabled:true,onFallback:event=>events.push(event),now:()=>now});
+ for(let i=0;i<4;i++){const result=await client.chat({messages:[{role:'user',content:'hello'}]});assert.equal(result.model,'localai-chat-fallback');}
+ assert.equal(primaryAttempts,3);assert.equal(tokenModel,'localai-chat-fallback');assert.equal(events.length,4);assert.ok(events.every(event=>event.to==='localai-chat-fallback'));
+ now+=60001;await client.chat({messages:[{role:'user',content:'hello'}]});assert.equal(primaryAttempts,4);
+ assert.throws(()=>createInferenceClient({key:'a'.repeat(43),fallbackEnabled:true}));
+});
+test('fallback never retries a partially delivered stream',async t=>{
+ const models=[];const endpoint=await fixture(t,(req,res,body)=>{
+  models.push(body.model);
+  if(req.url==='/apply-template')return res.end(JSON.stringify({prompt:'formatted'}));
+  if(req.url==='/tokenize')return res.end(JSON.stringify({tokens:[1]}));
+  res.setHeader('Content-Type','text/event-stream');res.end('data: {"choices":[{"delta":{"content":"partial"}}]}\n\n');
+ });
+ const events=[],client=createInferenceClient({key:'a'.repeat(43),chatEndpoint:endpoint,fallbackEnabled:true,onFallback:event=>events.push(event)});
+ await assert.rejects(client.chat({messages:[{role:'user',content:'hello'}],stream:true},{onChunk:()=>{}}),/incomplete/);
+ assert.deepEqual(events,[]);assert.ok(models.every(model=>model==='localai-chat'));assert.equal(client.busy,false);
 });
