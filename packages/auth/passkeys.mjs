@@ -42,6 +42,7 @@ export function createPasskeyService({repo,auth,rpId,origin,now=Date.now}){
     const challenge=repo.consumeChallenge(id,'authentication',now());bounded(response);
     if(!challenge)throw new AuthError();
     const credential=repo.passkey(response.id);if(!credential)throw new AuthError();
+    auth.guardAccount(credential.user_id);
     const result=await verifyAuthenticationResponse({response,expectedChallenge:challenge.challenge,expectedOrigin:origin,expectedRPID:rpId,requireUserVerification:true,credential:{id:credential.id,publicKey:new Uint8Array(credential.public_key),counter:credential.counter,transports:JSON.parse(credential.transports)}});
     if(!result.verified||!result.authenticationInfo.userVerified)throw new AuthError();
     return auth.completePasskeyLogin(credential.id,credential.counter,result.authenticationInfo.newCounter);

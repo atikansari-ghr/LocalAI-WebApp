@@ -9,13 +9,15 @@ Passwords use Node's scrypt implementation with N=32768, r=8, p=3, unique 128-bi
 
 TOTP uses SHA-1, six digits and a 30-second step with one adjacent step of tolerance. Accepted counters are recorded transactionally to deny replay. Ten independent random recovery codes are returned once; only their hashes persist. Recovery login requires the password and consumes a code atomically. Security events record action/actor/target/outcome, never password, TOTP or recovery values.
 
+Source attempts use normalized IP addresses and five-attempt/15-minute persistent buckets. A separate five-attempt/15-minute account/enrollment budget is shared across login, MFA enrollment, step-up and known passkey verification, so rotating source addresses cannot bypass it. A successful verified authentication resets that identity's failure budget. A locked identity waits for the window; no unauthenticated unlock route exists. Administrative lockout/recovery controls remain part of the pending UI/CLI task.
+
 ## Sessions and permissions
 Session tokens have 256-bit entropy and only SHA256 verification digests persist. Absolute lifetime is eight hours; idle timeout is 30 minutes. Privileged actions require a fresh MFA-backed session within five minutes and the session-bound HMAC CSRF token. Browser origin checks and secure cookie delivery still require the HTTP integration task. These service checks alone are not complete CSRF protection for a web application.
 
 The implemented administrator boundary protects application provisioning, rotation and revocation. General user/group management and the complete RBAC control surface remain pending. Password, TOTP and passkey login methods are separate from application credentials.
 
 ## Vault
-TOTP values are encrypted with AES-256-GCM and purpose-bound authenticated data. The random master key is a separate 32-byte, owner-only file, never a database field. Tampering, changed purpose, malformed envelopes and invalid key files fail closed. Do not delete or regenerate a master key to repair an existing vault. The complete encrypted backup/recovery/export workflow is not yet implemented.
+TOTP values are encrypted with AES-256-GCM and purpose-bound authenticated data. The random master key is a separate 32-byte, owner-only file, never a database field. Opening requires an existing key; explicit initialization requires proof that no encrypted state exists, supplied from the repository. A missing or incomplete key fails closed and is never silently regenerated. Tampering, changed purpose and malformed envelopes also fail closed. Do not delete or regenerate a master key to repair an existing vault. The complete encrypted backup/recovery/export workflow is not yet implemented.
 
 ## Applications and network policy
 Each application has exactly one current random API key digest. Rotation immediately replaces it; revocation clears it and disables the application. Optional expiry, capability permissions, IP/CIDR restrictions and explicit document scopes are checked on every authorization. The application ID determines its namespace; a caller cannot select another application's namespace. RAG/ingestion/document operations require at least one explicitly permitted scope.

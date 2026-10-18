@@ -49,11 +49,15 @@ export function verifyTotp(secret,code,now=Date.now(),lastCounter=-1) {
   }
   return null;
 }
-export function openVault(path) {
+export function initializeVault(path,{encryptedStateExists}={}) {
+  if(encryptedStateExists!==false)throw new Error('Vault initialization requires proof of no existing encrypted state');
   try {
     const fd=openSync(path,'wx',0o600);
     try{writeFileSync(fd,randomBytes(32));fsyncSync(fd);}finally{closeSync(fd);}
   }catch(error){if(error.code!=='EEXIST')throw error;}
+  return openVault(path);
+}
+export function openVault(path) {
   const stat=lstatSync(path);
   if(!stat.isFile()||(process.platform!=='win32'&&(stat.mode&0o077)!==0))throw new Error('Vault key permissions are unsafe');
   const key=readFileSync(path);if(key.length!==32)throw new Error('Vault key is invalid; recovery is required');

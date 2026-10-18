@@ -8,7 +8,7 @@ import { isoCBOR } from '@simplewebauthn/server/helpers';
 import { openSecurityRepository } from '../packages/auth/repository.mjs';
 import { createAuthService } from '../packages/auth/service.mjs';
 import { createPasskeyService } from '../packages/auth/passkeys.mjs';
-import { openVault,totp } from '../packages/auth/crypto.mjs';
+import { initializeVault,totp } from '../packages/auth/crypto.mjs';
 const rpId='localai.test',origin='https://localai.test';
 const digest=value=>createHash('sha256').update(value).digest();
 function authenticator(){
@@ -31,7 +31,7 @@ function authenticator(){
 test('WebAuthn verifies a real signed assertion and denies replay forged signatures wrong origins and expiry',async t=>{
  const dir=mkdtempSync(join(tmpdir(),'localai-passkeys-')),repo=openSecurityRepository(join(dir,'state.sqlite'));let now=1800000000000;
  t.after(()=>{repo.close();rmSync(dir,{recursive:true,force:true});});
- const auth=createAuthService({repo,vault:openVault(join(dir,'master.key')),now:()=>now});
+ const auth=createAuthService({repo,vault:initializeVault(join(dir,'master.key'),{encryptedStateExists:repo.hasEncryptedState()}),now:()=>now});
  const pending=await auth.beginSetup({code:auth.issueSetupCode(),username:'admin',password:'correct horse battery staple',ip:'127.0.0.1'});
  const admin=auth.completeSetup({enrollmentToken:pending.enrollmentToken,code:totp(pending.totpSecret,now),ip:'127.0.0.1'});
  const passkeys=createPasskeyService({repo,auth,rpId,origin,now:()=>now}),device=authenticator();

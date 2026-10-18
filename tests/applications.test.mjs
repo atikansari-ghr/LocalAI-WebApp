@@ -4,13 +4,13 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { openSecurityRepository } from '../packages/auth/repository.mjs';
-import { openVault,totp } from '../packages/auth/crypto.mjs';
+import { initializeVault,totp } from '../packages/auth/crypto.mjs';
 import { createAuthService } from '../packages/auth/service.mjs';
 import { createApplicationService } from '../packages/auth/applications.mjs';
 test('applications require step-up admin, isolate scope/capability/IP and revoke old keys immediately',async t=>{
  const dir=mkdtempSync(join(tmpdir(),'localai-app-')),repo=openSecurityRepository(join(dir,'state.sqlite'));let now=1800000000000;
  t.after(()=>{repo.close();rmSync(dir,{recursive:true,force:true});});
- const auth=createAuthService({repo,vault:openVault(join(dir,'master.key')),now:()=>now});
+ const auth=createAuthService({repo,vault:initializeVault(join(dir,'master.key'),{encryptedStateExists:repo.hasEncryptedState()}),now:()=>now});
  const pending=await auth.beginSetup({code:auth.issueSetupCode(),username:'admin',password:'correct horse battery staple',ip:'127.0.0.1'});
  const admin=auth.completeSetup({enrollmentToken:pending.enrollmentToken,code:totp(pending.totpSecret,now),ip:'127.0.0.1'});
  const apps=createApplicationService({repo,auth,now:()=>now});

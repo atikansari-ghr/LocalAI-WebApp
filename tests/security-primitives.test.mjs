@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, renameSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { scryptSync } from 'node:crypto';
-import { hashPassword, verifyPassword, totp, verifyTotp, openVault } from '../packages/auth/crypto.mjs';
+import { hashPassword, verifyPassword, totp, verifyTotp, openVault, initializeVault } from '../packages/auth/crypto.mjs';
 import { matchesNetwork, resolveClientIp } from '../packages/auth/network.mjs';
 test('password hashes are salted and wrong or malformed hashes never authenticate',async()=>{
  const a=await hashPassword('correct horse battery staple'), b=await hashPassword('correct horse battery staple');
@@ -28,12 +28,23 @@ test('TOTP matches an RFC vector and rejects already-used counters and expired c
 });
 test('vault survives reopening and binds encrypted secrets to their purpose',t=>{
  const dir=mkdtempSync(join(tmpdir(),'localai-vault-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
- const path=join(dir,'master.key');const vault=openVault(path), encrypted=vault.seal('synthetic secret','totp:user1');
+ const path=join(dir,'master.key');const vault=initializeVault(path,{encryptedStateExists:false}), encrypted=vault.seal('synthetic secret','totp:user1');
  assert.equal(encrypted.includes('synthetic'),false);assert.equal(openVault(path).open(encrypted,'totp:user1'),'synthetic secret');
  assert.throws(()=>vault.open(encrypted,'totp:user2'));
  const parts=encrypted.split('.');parts[2]=Buffer.from('tampered').toString('base64url');
  assert.throws(()=>vault.open(parts.join('.'),'totp:user1'));
  assert.equal(readFileSync(path).length,32);
+});
+test('opening a vault with a missing master key requires recovery and never silently rekeys it',t=>{
+ const dir=mkdtempSync(join(tmpdir(),'localai-vault-lost-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
+ const path=join(dir,'master.key');const vault=initializeVault(path,{encryptedStateExists:false}),encrypted=vault.seal('saved data','purpose');
+ renameSync(path,path+'.recovery');assert.throws(()=>openVault(path));
+ renameSync(path+'.recovery',path);assert.equal(openVault(path).open(encrypted,'purpose'),'saved data');
+});
+test('initialization requires an empty-state proof and never replaces an incomplete existing key',t=>{
+ const dir=mkdtempSync(join(tmpdir(),'localai-vault-init-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
+ const path=join(dir,'master.key');assert.throws(()=>initializeVault(path,{encryptedStateExists:true}));assert.equal(existsSync(path),false);
+ writeFileSync(path,Buffer.alloc(0),{mode:0o600});assert.throws(()=>initializeVault(path,{encryptedStateExists:false}));assert.equal(readFileSync(path).length,0);
 });
 test('network restrictions handle IPv4 IPv6 and mapped IPv4 without accepting malformed CIDRs',()=>{
  assert.equal(matchesNetwork('192.168.10.20',['192.168.10.0/24']),true);

@@ -12,6 +12,8 @@ export function openSecurityRepository(path){
   state:()=>db.prepare('SELECT * FROM security_state WHERE id=1').get(),
   userByName:username=>db.prepare("SELECT * FROM users WHERE username=? COLLATE NOCASE AND status='active'").get(username),
   userById,
+  hasEncryptedState:()=>db.prepare('SELECT EXISTS(SELECT 1 FROM users) AS found').get().found===1,
+  clearRate:key=>db.prepare('DELETE FROM auth_rate WHERE key=?').run(key),
   audit:(...args)=>audit(...args),
   auditRecords:()=>db.prepare('SELECT at,action,actor,target,outcome FROM audit_events ORDER BY id').all(),
   hitRate(key,now,limit,window){return transaction(()=>{

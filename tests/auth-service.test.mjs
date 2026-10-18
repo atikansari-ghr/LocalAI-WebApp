@@ -5,13 +5,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openSecurityRepository } from '../packages/auth/repository.mjs';
 import { createAuthService } from '../packages/auth/service.mjs';
-import { openVault, totp } from '../packages/auth/crypto.mjs';
+import { openVault, initializeVault, totp } from '../packages/auth/crypto.mjs';
 
 function fixture(t){
- const dir=mkdtempSync(join(tmpdir(),'localai-auth-')),repo=openSecurityRepository(join(dir,'state.sqlite')),vault=openVault(join(dir,'master.key'));
+ const dir=mkdtempSync(join(tmpdir(),'localai-auth-')),repo=openSecurityRepository(join(dir,'state.sqlite')),vault=initializeVault(join(dir,'master.key'),{encryptedStateExists:repo.hasEncryptedState()});
  let time=1800000000000;const auth=createAuthService({repo,vault,now:()=>time});
  t.after(()=>{repo.close();rmSync(dir,{recursive:true,force:true});});
- return {auth,repo,advance:ms=>time+=ms,now:()=>time};
+ return {auth,repo,path:join(dir,'state.sqlite'),masterPath:join(dir,'master.key'),advance:ms=>time+=ms,now:()=>time};
 }
 async function setup(f){
  const code=f.auth.issueSetupCode();
@@ -54,9 +54,35 @@ test('recovery codes are single-use, sessions enforce CSRF revocation idle and a
 });
 test('login rate limits persist in SQLite and audit records never contain passwords MFA or recovery secrets',async t=>{
  const f=fixture(t),admin=await setup(f);
- for(let i=0;i<6;i++)await assert.rejects(f.auth.login({username:'admin',password:'incorrect password',code:'000000',ip:'192.0.2.1'}));
+ for(let i=0;i<5;i++)await assert.rejects(f.auth.login({username:'admin',password:'incorrect password',code:'000000',ip:'192.0.2.1'}));
+ f.advance(30000);
+ const reopened=openSecurityRepository(f.path);
+ try{
+  const auth=createAuthService({repo:reopened,vault:openVault(f.masterPath),now:f.now});
+  await assert.rejects(auth.login({username:'admin',password:'correct horse battery staple',code:totp(admin.totpSecret,f.now()),ip:'192.0.2.99'}));
+ }finally{reopened.close();}
  const log=JSON.stringify(f.repo.auditRecords());
  assert.equal(log.includes('incorrect password'),false);assert.equal(log.includes(admin.totpSecret),false);
  for(const recovery of admin.recoveryCodes)assert.equal(log.includes(recovery),false);
  assert.ok(f.repo.auditRecords().length>0);
+});
+test('absolute session expiry applies even when the session is used within each idle window',async t=>{
+ const f=fixture(t),admin=await setup(f);
+ for(let i=0;i<23;i++){f.advance(20*60000);assert.equal(f.auth.session(admin.token).user.role,'admin');}
+ f.advance(20*60000);assert.throws(()=>f.auth.session(admin.token));
+});
+test('account MFA lockout cannot be bypassed by rotating source addresses',async t=>{
+ const f=fixture(t),admin=await setup(f);f.advance(30000);
+ for(let i=1;i<=5;i++)await assert.rejects(f.auth.login({username:'admin',password:'correct horse battery staple',code:'invalid',ip:'192.0.2.'+i}));
+ await assert.rejects(f.auth.login({username:'admin',password:'correct horse battery staple',code:totp(admin.totpSecret,f.now()),ip:'192.0.2.99'}));
+ f.advance(16*60000);
+ assert.equal((await f.auth.login({username:'admin',password:'correct horse battery staple',code:totp(admin.totpSecret,f.now()),ip:'192.0.2.99'})).user.role,'admin');
+});
+test('pending enrollment and step-up share persistent identity-level MFA budgets',async t=>{
+ const f=fixture(t),pending=await f.auth.beginSetup({code:f.auth.issueSetupCode(),username:'admin',password:'correct horse battery staple',ip:'127.0.0.1'});
+ for(let i=1;i<=5;i++)assert.throws(()=>f.auth.completeSetup({enrollmentToken:pending.enrollmentToken,code:'invalid',ip:'192.0.2.'+i}));
+ assert.throws(()=>f.auth.completeSetup({enrollmentToken:pending.enrollmentToken,code:totp(pending.totpSecret,f.now()),ip:'192.0.2.99'}));
+ const g=fixture(t),admin=await setup(g);g.advance(30000);
+ for(let i=1;i<=5;i++)assert.throws(()=>g.auth.stepUp(admin.token,admin.csrf,'invalid','192.0.2.'+i));
+ assert.throws(()=>g.auth.stepUp(admin.token,admin.csrf,totp(admin.totpSecret,g.now()),'192.0.2.99'));
 });
