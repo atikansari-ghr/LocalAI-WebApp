@@ -55,7 +55,7 @@ async function readArchive(input,state,depth){
    if(size>state.policy.maxEntryBytes)fail('archive_entry_size_limit');if(state.expanded+size>state.policy.maxExpandedBytes)fail('archive_expanded_limit');
    if(size>0&&(!compressed||size/compressed>state.policy.maxCompressionRatio))fail('archive_compression_ratio');
    if(directory&&(size||compressed))fail('archive_invalid_directory');
-   const extension=path.path.slice(path.path.lastIndexOf('.')+1).toLowerCase();if(!directory&&(EXECUTABLES.has(extension)||!DOCUMENTS.has(extension)))fail('archive_entry_format_unsupported');
+   const extension=path.path.slice(path.path.lastIndexOf('.')+1).toLowerCase();if(!directory&&(EXECUTABLES.has(extension)||!(DOCUMENTS.has(extension)||(state.office&&extension==='rels'))))fail('archive_entry_format_unsupported');
    const local=await zip.readLocalFileHeaderPromise(entry);state.check();
    const localName=yauzl.getFileNameLowLevel(local.generalPurposeBitFlag,local.fileName,entry.extraFields,true);
    if(localName!==entry.fileName||local.generalPurposeBitFlag!==entry.generalPurposeBitFlag||local.compressionMethod!==entry.compressionMethod)fail('archive_header_mismatch');
@@ -77,6 +77,7 @@ async function readArchive(input,state,depth){
     if(executableBytes(content))fail('archive_executable_content');
    }
    if(checksum!==entry.crc32)fail('archive_crc_mismatch');
+   if(state.office&&!directory&&(extension==='zip'||['docx','xlsx','pptx','odt','ods','odp'].includes(extension)||(content.length>=4&&content[0]===80&&content[1]===75&&((content[2]===3&&content[3]===4)||(content[2]===5&&content[3]===6)))))fail('office_embedded_package_forbidden');
    const archive=!directory&&extension==='zip'?await readArchive({name:path.path.split('/').at(-1),bytes:content},state,depth+1):undefined;
    entries.push(Object.freeze({path:path.name,directory,size,sha256:createHash('sha256').update(content).digest('hex'),content,...(archive?{archive}:{}),structure:directory?'directory':archive?'zip-structure-and-crc-passed':'requires-parser-validation'}));
   }
@@ -84,12 +85,15 @@ async function readArchive(input,state,depth){
   return Object.freeze({document,validation:'zip-structure-and-crc-passed',entries:Object.freeze(entries)});
  }finally{zip.close();}
 }
-export async function readZipDocument(input,options={}){
+async function readContainer(input,options={},office=false){
  if(!options||typeof options!=='object'||Array.isArray(options)||Object.keys(options).some(key=>!['limits','signal'].includes(key)))fail('invalid_archive_options');
  const policy=policyFor(options.limits??{}),caller=options.signal;if(caller!==undefined&&!(caller instanceof AbortSignal))fail('invalid_archive_signal');
  const controller=new AbortController(),deadline=performance.now()+policy.timeoutMs;let timedOut=false;
  const abort=()=>controller.abort(),timer=setTimeout(()=>{timedOut=true;controller.abort();},policy.timeoutMs);timer.unref();caller?.addEventListener('abort',abort,{once:true});if(caller?.aborted)abort();
- const state={policy,signal:controller.signal,entries:0,expanded:0,check(){if(performance.now()>=deadline){timedOut=true;fail('archive_timeout');}controller.signal.throwIfAborted();}};
+ const state={office,policy,signal:controller.signal,entries:0,expanded:0,check(){if(performance.now()>=deadline){timedOut=true;fail('archive_timeout');}controller.signal.throwIfAborted();}};
  try{return await readArchive(input,state,0);}catch(error){if(caller?.aborted)fail('archive_cancelled');if(timedOut)fail('archive_timeout');if(error instanceof DocumentError)throw error;fail('archive_invalid');}
  finally{clearTimeout(timer);caller?.removeEventListener('abort',abort);controller.abort();}
 }
+
+export function readZipDocument(input,options={}){return readContainer(input,options);}
+export function readOfficeZipDocument(input,options={}){return readContainer(input,options,true);}
