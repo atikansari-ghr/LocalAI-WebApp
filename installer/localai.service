@@ -1,0 +1,41 @@
+[Unit]
+Description=Local AI gateway foundation (not production qualified)
+After=network.target
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=localai
+Group=localai
+WorkingDirectory=/opt/localai/current
+EnvironmentFile=/etc/localai/gateway.env
+ExecStart=/opt/localai/node/bin/node /opt/localai/current/apps/gateway/main.mjs
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+UMask=0077
+StateDirectory=localai
+StateDirectoryMode=0700
+CacheDirectory=localai
+CacheDirectoryMode=0700
+LogsDirectory=localai
+LogsDirectoryMode=0700
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+NoNewPrivileges=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+TasksMax=64
+MemoryMax=512M
+CPUQuota=100%
+
+[Install]
+WantedBy=multi-user.target

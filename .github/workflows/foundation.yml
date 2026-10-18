@@ -1,0 +1,39 @@
+name: Foundation
+on:
+  pull_request:
+  push:
+    branches: [main, 'feat/**', 'docs/**']
+permissions:
+  contents: read
+jobs:
+  test:
+    name: Foundation tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.19.0'
+      - run: npm test
+      - run: npm run check:docs
+      - name: Installer syntax and unsupported-host rejection
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          bash -n installer/install.sh
+          if bash installer/install.sh --check; then
+            echo "Unexpectedly accepted Ubuntu as Debian 13"
+            exit 1
+          fi
+      - name: Verify missing production evidence blocks release
+        shell: bash
+        run: |
+          if npm run release:check; then
+            echo "Release check accepted missing evidence"
+            exit 1
+          fi
+      - run: git diff --check
