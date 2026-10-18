@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, existsSync, writeFileSync, mkdirSync, readFileSync, readlinkSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, writeFileSync, mkdirSync, readFileSync, readlinkSync, symlinkSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { once } from 'node:events';
@@ -12,6 +13,15 @@ import { readInstallationConfig, backupInstallation, probeGateway, prepareConfig
 import { applyActivation, restoreActivation, commitActivation } from '../installer/activation.mjs';
 
 function fixture(t){const d=mkdtempSync(join(tmpdir(),'localai-install-'));t.after(()=>rmSync(d,{recursive:true,force:true}));return d;}
+
+test('operator tools execute and reject invalid calls through deployment symlinks',{skip:process.platform==='win32'?'Deployment symlinks are exercised on Linux':false},t=>{
+ const dir=fixture(t);
+ for(const [name,source,args]of [['lifecycle','../installer/lifecycle.mjs',['validate',join(dir,'missing.env')]],['setup','../scripts/setup-code.mjs',[]]]){
+  const link=join(dir,name+'.mjs');symlinkSync(fileURLToPath(new URL(source,import.meta.url)),link);
+  const result=spawnSync(process.execPath,[link,...args],{encoding:'utf8'});
+  assert.equal(result.status,1,result.stderr);assert.notEqual(result.stderr.trim(),'');
+ }
+});
 test('pre-install backup follows configured state and never applies migrations',async t=>{
  const dir=fixture(t),stateDir=join(dir,'custom');mkdirSync(stateDir);
  const state=openState(join(stateDir,'platform.sqlite'));state.setSetting('saved',{n:19});state.close();

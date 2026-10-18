@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync,realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { readInstallationConfig } from '../installer/lifecycle.mjs';
@@ -14,7 +14,7 @@ export function issueSetupCode(stateDir){
   return createAuthService({repo,vault}).issueSetupCode();
  }finally{repo.close();}
 }
-if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
+if(process.argv[1]&&import.meta.url===pathToFileURL(realpathSync(process.argv[1])).href){
  process.umask(0o077);
  try{
   if(process.getuid?.()===0)throw new Error('Run as the localai service account to preserve state ownership.');

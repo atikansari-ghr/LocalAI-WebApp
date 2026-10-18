@@ -1,4 +1,4 @@
-import { readFileSync, existsSync, mkdirSync, openSync, writeFileSync, fsyncSync, closeSync, linkSync, unlinkSync } from 'node:fs';
+import { readFileSync, existsSync, mkdirSync, openSync, writeFileSync, fsyncSync, closeSync, linkSync, unlinkSync, realpathSync } from 'node:fs';
 import { parseEnv } from 'node:util';
 import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -53,7 +53,7 @@ export async function probeGateway(config,expectedPid) {
     return response.status===200&&body.status==='alive'&&body.pid===expectedPid;
   }catch{return false;}
 }
-if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href) {
+if(process.argv[1]&&import.meta.url===pathToFileURL(realpathSync(process.argv[1])).href) {
   try {
     const [,,action,path,pid]=process.argv;
     if(action==='prepare')console.log(prepareConfiguration(path));
