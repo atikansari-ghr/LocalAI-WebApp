@@ -17,7 +17,7 @@ Use a disposable Debian 13 Proxmox LXC with 4 vCPU, 6 GB RAM and 100 GB disk; ro
 sudo bash installer/install.sh --check
 sudo bash installer/install.sh
 ```
-Do not execute a moving branch from a remote pipe. The installer requires a clean local checkout. The foundation supports x86-64 and arm64; actual compatibility on either is not yet certified. The pinned Node runtime is fetched from nodejs.org and verified against committed SHA256 values. See [runtime provenance](architecture.md#runtime-provenance).
+Do not execute a moving branch from a remote pipe. The installer requires a clean local checkout. The x86-64 foundation was tested on the target Debian 13 LXC; arm64 remains untested. This does not certify the AI stack or production readiness. The pinned Node runtime is fetched from nodejs.org and verified against committed SHA256 values. See [runtime provenance](architecture.md#runtime-provenance).
 
 On a dedicated disposable LXC only, the repeatable integration harness is `TARGET_TEST_LXC=disposable /opt/localai/node/bin/node tests/target/foundation.mjs`, run as root from a clean checkout after the first install. It reinstalls the selected revision, checks rerun/state/backup, kills the service to test systemd recovery, and creates a local synthetic fault commit with a broken unit to test rollback. The synthetic commit is never pushed. Logs and evidence are written to the ignored .localai directory. This harness must not run on a host containing real user data.
 
