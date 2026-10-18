@@ -9,7 +9,7 @@ npm test
 npm run check:docs
 npm start
 ```
-No npm packages are required. The gateway binds 127.0.0.1:1234 and writes private SQLite state under .localai. It exposes GET /health/live and GET /health/ready only. Readiness intentionally returns 503 until the remaining platform is implemented. No unauthenticated Admin or Workspace UI is served.
+For the security development branch, run `npm ci --ignore-scripts` before testing to install the locked WebAuthn dependency graph. The gateway binds 127.0.0.1:1234 and writes private SQLite state under .localai. It exposes GET /health/live and GET /health/ready only. Readiness intentionally returns 503 until the remaining platform is implemented. No unauthenticated Admin or Workspace UI is served.
 
 ## Debian foundation evaluation
 Use a disposable Debian 13 Proxmox LXC with 4 vCPU, 6 GB RAM and 100 GB disk; root, running systemd and Git are required. Clone and inspect the intended feature commit before executing:
