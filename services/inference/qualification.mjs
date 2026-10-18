@@ -8,16 +8,32 @@ import fallback from './fallback-manifest.json' with {type:'json'};
 
 export const REQUIRED_NATIVE_CHECKS=Object.freeze(['english-chat','arabic-chat','english-arabic-embeddings','native-sse-stream','gateway-adapter-real-tokenizer-context-cancellation-and-reuse','idle-sleep-and-lazy-reload','native-worker-crash-restart-and-vault-isolation','real-fallback-with-primary-http-fault-circuit-cooldown-and-recovery','child-listeners-isolated-and-unrelated-user-denied']);
 function exactKeys(value,keys){if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).sort().join(',')!==[...keys].sort().join(','))throw new Error('Unexpected qualification fields');}
+function validateSuite(suite){
+ exactKeys(suite,['tests','passed','failed','skipped','cancelled']);
+ if(Object.values(suite).some(n=>!Number.isSafeInteger(n)||n<0)||suite.tests<1||suite.passed!==suite.tests||suite.failed!==0||suite.skipped!==0||suite.cancelled!==0)throw new Error('Complete non-skipped native test evidence required');
+}
 export function validateQualification(value,expected){
- exactKeys(value,['schemaVersion','scope','sourceCommit','sourceFingerprint','starterManifest','fallbackManifest','suite','checks']);
+ exactKeys(value,['schemaVersion','scope','sourceCommit','sourceFingerprint','starterManifest','fallbackManifest','environmentFingerprint','suite','checks']);
  if(value.schemaVersion!==1||value.scope!=='private-preview')throw new Error('Private preview qualification required');
- for(const key of ['sourceCommit','sourceFingerprint','starterManifest','fallbackManifest']){
+ for(const key of ['sourceCommit','sourceFingerprint','starterManifest','fallbackManifest','environmentFingerprint']){
   if(typeof value[key]!=='string'||!new RegExp('^[a-f0-9]{'+(key==='sourceCommit'?40:64)+'}$').test(value[key])||value[key]!==expected[key])throw new Error('Qualification identity mismatch');
  }
- exactKeys(value.suite,['tests','passed','failed','skipped','cancelled']);
- if(Object.values(value.suite).some(n=>!Number.isSafeInteger(n)||n<0)||value.suite.tests<1||value.suite.passed!==value.suite.tests||value.suite.failed!==0||value.suite.skipped!==0||value.suite.cancelled!==0)throw new Error('Complete non-skipped native test evidence required');
+ validateSuite(value.suite);
  if(!Array.isArray(value.checks)||value.checks.length!==REQUIRED_NATIVE_CHECKS.length||new Set(value.checks).size!==value.checks.length||REQUIRED_NATIVE_CHECKS.some(check=>!value.checks.includes(check)))throw new Error('Mandatory native evidence missing');
  const copy=structuredClone(value);Object.freeze(copy.suite);Object.freeze(copy.checks);return Object.freeze(copy);
+}
+export function parseNativeTestSummary(output){
+ const result={};
+ for(const [source,target]of Object.entries({tests:'tests',pass:'passed',fail:'failed',cancelled:'cancelled',skipped:'skipped'})){
+  const matches=[...output.matchAll(new RegExp('^# '+source+' (\\d+)\\r?$','gm'))];if(matches.length!==1)throw new Error('Unambiguous native test summary required');result[target]=Number(matches[0][1]);
+ }
+ validateSuite(result);return Object.freeze(result);
+}
+export function combineNativeQualification({identity,suite,workers,router}){
+ if(workers?.qualification!=='workers-loaded-unqualified'||router?.qualification!=='router-tested-unqualified'||workers.manifestSha256!==identity.starterManifest||router.starterManifest!==identity.starterManifest||router.fallbackManifest!==identity.fallbackManifest||!Array.isArray(workers.checks)||!Array.isArray(router.checks))throw new Error('Native report identity mismatch');
+ const observed=new Set([...workers.checks,...router.checks].map(item=>item?.check));
+ const checks=REQUIRED_NATIVE_CHECKS.filter(check=>observed.has(check));
+ return validateQualification({schemaVersion:1,scope:'private-preview',...identity,suite,checks},identity);
 }
 export function assertProtectedRecord(stat){
  if(!stat.isFile()||stat.isSymbolicLink()||stat.uid!==0||stat.nlink!==1||(stat.mode&0o022)!==0)throw new Error('Qualification record must be a protected root-owned regular file');
@@ -36,9 +52,16 @@ export function computeRuntimeFingerprint(sourceRoot){
  return createHash('sha256').update('localai-runtime-v1\n').update(JSON.stringify(files.sort((a,b)=>a[0]<b[0]?-1:a[0]>b[0]?1:0))).digest('hex');
 }
 const digest=value=>createHash('sha256').update(value).digest('hex');
+export function computeEnvironmentFingerprint({read=path=>readFileSync(path,'utf8')}={}){
+ const cpu=read('/proc/cpuinfo'),memory=read('/proc/meminfo');
+ const machine=read('/etc/machine-id').trim();if(!/^[a-f0-9]{32}$/.test(machine))throw new Error('Native machine identity unavailable');
+ const model=cpu.match(/^model name\s*:\s*(.+)$/m)?.[1],flags=cpu.match(/^flags\s*:\s*(.+)$/m)?.[1],total=memory.match(/^MemTotal:\s+(\d+)\s+kB$/m)?.[1];
+ if(!model||!flags||!total)throw new Error('Native target identity unavailable');
+ return digest(JSON.stringify({machine,os:read('/etc/os-release'),kernel:read('/proc/sys/kernel/osrelease').trim(),packages:digest(read('/var/lib/dpkg/status')),cpu:model,flags:flags.split(/\s+/).sort(),memoryKiB:total,node:process.version,arch:process.arch}));
+}
 export function expectedQualificationIdentity(sourceRoot,sourceCommit=basename(realpathSync(sourceRoot))){
  if(!/^[a-f0-9]{40}$/.test(sourceCommit))throw new Error('Immutable source revision required');
- return {sourceCommit,sourceFingerprint:computeRuntimeFingerprint(sourceRoot),starterManifest:digest(JSON.stringify(validateStarterManifest(starter))),fallbackManifest:digest(JSON.stringify({schemaVersion:1,assets:[validateFallbackModel(fallback)]}))};
+ return {sourceCommit,sourceFingerprint:computeRuntimeFingerprint(sourceRoot),starterManifest:digest(JSON.stringify(validateStarterManifest(starter))),fallbackManifest:digest(JSON.stringify({schemaVersion:1,assets:[validateFallbackModel(fallback)]})),environmentFingerprint:computeEnvironmentFingerprint()};
 }
 function readProtectedFile(path,{optional=false,credential=false}={}){
  let fd;
