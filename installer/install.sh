@@ -59,8 +59,14 @@ cleanup() {
       systemctl daemon-reload
       if [[ $previous_enabled == 0 ]]; then systemctl disable localai.service 2>/dev/null || true; fi
       if [[ $previous_active == 1 ]]; then
+        systemctl reset-failed localai.service || true
         systemctl start localai.service || true
-        if ! probe_service; then echo "ROLLBACK HEALTH FAILED; service requires recovery." >&2; fi
+        restored_healthy=0
+        for recovery_attempt in {1..15}; do
+          if probe_service; then restored_healthy=1; break; fi
+          sleep 1
+        done
+        if [[ $restored_healthy == 0 ]]; then echo "ROLLBACK HEALTH FAILED; service requires recovery." >&2; fi
       fi
     else
       echo "ROLLBACK FAILED; keep the protected activation journal for recovery." >&2
@@ -110,6 +116,7 @@ activation_started=1
 "$runtime/bin/node" "$source_root/installer/activation.mjs" apply /opt/localai /etc/systemd/system/localai.service "$deployment" "$runtime" "$deployment/installer/localai.service" "$journal"
 systemctl daemon-reload
 systemctl enable localai.service
+systemctl reset-failed localai.service || true
 systemctl restart localai.service
 for attempt in {1..15}; do
   if probe_service; then
