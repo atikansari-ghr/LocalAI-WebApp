@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
+import {mkdtempSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import {createInferenceClient as createClient} from '../services/inference/client.mjs';
 const createInferenceClient=options=>createClient({resources:()=>({availableBytes:2*1024**3}),...options});
 
@@ -112,4 +115,37 @@ test('fallback never retries a partially delivered stream',async t=>{
  const events=[],client=createInferenceClient({key:'a'.repeat(43),chatEndpoint:endpoint,fallbackEnabled:true,onFallback:event=>events.push(event)});
  await assert.rejects(client.chat({messages:[{role:'user',content:'hello'}],stream:true},{onChunk:()=>{}}),/incomplete/);
  assert.deepEqual(events,[]);assert.ok(models.every(model=>model==='localai-chat'));assert.equal(client.busy,false);
+});
+test('internal primary deadlines open the circuit for the next request without retrying the timed-out request',async t=>{
+ let primary=0,fallback=0;
+ const endpoint=await fixture(t,(req,res,body)=>{
+  if(body.model==='localai-chat'){primary++;return;}
+  if(req.url==='/apply-template')return res.end(JSON.stringify({prompt:'formatted'}));
+  if(req.url==='/tokenize')return res.end(JSON.stringify({tokens:[1]}));
+  fallback++;res.end(JSON.stringify({choices:[{message:{content:'ready'}}]}));
+ });
+ const events=[],client=createInferenceClient({key:'a'.repeat(43),chatEndpoint:endpoint,timeoutMs:100,fallbackEnabled:true,onFallback:event=>events.push(event)});
+ for(let i=0;i<3;i++)await assert.rejects(client.chat({messages:[{role:'user',content:'hello'}]}),/inference_timeout/);
+ assert.equal(primary,3);assert.equal(fallback,0);
+ const result=await client.chat({messages:[{role:'user',content:'hello'}]});assert.equal(result.model,'localai-chat-fallback');assert.equal(primary,3);assert.equal(fallback,1);assert.equal(events.length,1);
+});
+test('private Unix transport carries authenticated requests without opening a TCP worker port',{skip:process.platform==='win32'?'Native Linux Unix-socket transport':false},async t=>{
+ const dir=mkdtempSync(join(tmpdir(),'lai-')),path=join(dir,'worker.sock');
+ const server=createServer(async(req,res)=>{let raw='';for await(const chunk of req)raw+=chunk;assert.equal(req.headers.authorization,'Bearer '+'a'.repeat(43));res.end(JSON.stringify(req.url==='/apply-template'?{prompt:'formatted'}:req.url==='/tokenize'?{tokens:[1]}:{choices:[{message:{content:'ready'}}]}));});
+ await new Promise(resolve=>server.listen(path,resolve));t.after(async()=>{server.closeAllConnections();await new Promise(resolve=>server.close(resolve));rmSync(dir,{recursive:true,force:true});});
+ const client=createInferenceClient({key:'a'.repeat(43),chatEndpoint:'unix:'+path});
+ const result=await client.chat({messages:[{role:'user',content:'hello'}]});assert.equal(result.choices[0].message.content,'ready');
+ for(const endpoint of ['unix:relative.sock','unix:/tmp/../private.sock','unix:/tmp/worker.sock?x','unix:/tmp/worker'])assert.throws(()=>createInferenceClient({key:'a'.repeat(43),chatEndpoint:endpoint}));
+});
+test('failed partial streams influence subsequent circuit decisions while their current requests never retry',async t=>{
+ let primary=0;
+ const endpoint=await fixture(t,(req,res,body)=>{
+  if(req.url==='/apply-template'){if(body.model==='localai-chat')primary++;return res.end(JSON.stringify({prompt:'formatted'}));}
+  if(req.url==='/tokenize')return res.end(JSON.stringify({tokens:[1]}));
+  res.setHeader('Content-Type','text/event-stream');res.end('data: {"choices":[{"delta":{"content":"hi"}}]}\n\n'+(body.model==='localai-chat'?'':'data: [DONE]\n\n'));
+ });
+ const events=[],client=createInferenceClient({key:'a'.repeat(43),chatEndpoint:endpoint,fallbackEnabled:true,onFallback:event=>events.push(event)}),input={messages:[{role:'user',content:'hello'}],stream:true};
+ for(let i=0;i<3;i++)await assert.rejects(client.chat(input,{onChunk:()=>{}}),/incomplete/);
+ assert.equal(primary,3);assert.equal(events.length,0);
+ let output='';await client.chat(input,{onChunk:chunk=>{output+=Buffer.from(chunk).toString();}});assert.equal(primary,3);assert.equal(events.length,1);assert.ok(output.includes('localai-chat-fallback'));
 });

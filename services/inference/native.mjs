@@ -10,7 +10,7 @@ export function buildWorkerArguments(profile,paths,options={}){
   if(typeof value!=='string'||!/^\/(?:[A-Za-z0-9_.-]+\/)*[A-Za-z0-9_.-]+$/.test(value)||value.split('/').some(part=>part==='.'||part==='..'))throw new Error('Unsafe worker path');
  }
  const embedding=profile==='embedding';
- return ['--model',paths.model,'--host','127.0.0.1','--port',embedding?'8082':'8081',
+ return ['--model',paths.model,'--host',embedding?'/run/localai-embedding/inference.sock':'/run/localai-chat/inference.sock',
   '--api-key-file',paths.credential,'--n-gpu-layers','0','--threads',embedding?'1':'3',
   '--threads-batch',embedding?'1':'3','--parallel','1','--ctx-size',embedding?'2048':'4096',
   '--batch-size','256','--ubatch-size','256','--fit','off','--cache-ram','0',
@@ -45,7 +45,10 @@ StartLimitBurst=3
 [Service]
 Type=simple
 User=localai-inference
-Group=localai-inference
+Group=localai-runtime
+SupplementaryGroups=localai-inference
+RuntimeDirectory=localai-${profile}
+RuntimeDirectoryMode=0750
 Slice=localai-ai.slice
 WorkingDirectory=${runtime}
 LoadCredentialEncrypted=ai-backend-key:/etc/credstore.encrypted/localai-ai-key
@@ -53,12 +56,13 @@ ExecStart=${runtime}/llama-server ${args.join(' ')}
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=20
-UMask=0077
+UMask=0007
 ProtectSystem=strict
 ProtectHome=true
 InaccessiblePaths=/var/lib/localai /etc/localai
 PrivateTmp=true
 PrivateDevices=true
+PrivateNetwork=true
 NoNewPrivileges=true
 ProtectKernelTunables=true
 ProtectKernelModules=true
@@ -67,8 +71,6 @@ RestrictSUIDSGID=true
 LockPersonality=true
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 CapabilityBoundingSet=
-IPAddressDeny=any
-IPAddressAllow=localhost
 TasksMax=64
 MemoryMax=${profile==='chat'?'4G':'1G'}
 MemorySwapMax=0

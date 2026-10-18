@@ -6,7 +6,7 @@ const paths={model:'/var/lib/localai-models/hash/model.gguf',credential:'/run/cr
 test('workers use private CPU inference with bounded resources and no prompt logging',()=>{
  const args=buildWorkerArguments('chat',paths);
  const value=flag=>args[args.indexOf(flag)+1];
- assert.equal(value('--host'),'127.0.0.1');assert.equal(value('--port'),'8081');
+ assert.equal(value('--host'),'/run/localai-chat/inference.sock');assert.ok(!args.includes('--port'));
  assert.equal(value('--n-gpu-layers'),'0');assert.equal(value('--parallel'),'1');
  assert.equal(value('--ctx-size'),'4096');assert.equal(value('--threads'),'3');
  assert.equal(value('--cache-ram'),'0');assert.equal(value('--api-key-file'),paths.credential);
@@ -15,7 +15,7 @@ test('workers use private CPU inference with bounded resources and no prompt log
 test('embedding worker uses last pooling and bounded batches on a separate private port',()=>{
  const args=buildWorkerArguments('embedding',paths),value=flag=>args[args.indexOf(flag)+1];
  assert.ok(args.includes('--embedding'));assert.equal(value('--pooling'),'last');
- assert.equal(value('--embd-normalize'),'2');assert.equal(value('--port'),'8082');
+ assert.equal(value('--embd-normalize'),'2');assert.equal(value('--host'),'/run/localai-embedding/inference.sock');
  assert.equal(value('--ctx-size'),'2048');assert.equal(value('--ubatch-size'),'256');
  assert.equal(value('--threads'),'1');
 });
@@ -33,9 +33,9 @@ test('worker arguments reject external binds, arbitrary overrides and unsafe or 
 });
 test('native units isolate gateway secrets and enforce aggregate slice membership',()=>{
  const unit=renderWorkerUnit('chat',{...paths,runtime:'/opt/localai/ai/runtimes/llama-b11669'});
- for(const directive of ['User=localai-inference','Group=localai-inference','Slice=localai-ai.slice','ProtectSystem=strict','ProtectHome=true','InaccessiblePaths=/var/lib/localai /etc/localai','NoNewPrivileges=true','MemoryMax=4G','CPUQuota=300%','LoadCredentialEncrypted=ai-backend-key:/etc/credstore.encrypted/localai-ai-key'])assert.ok(unit.includes(directive),directive);
+ for(const directive of ['User=localai-inference','Group=localai-runtime','Slice=localai-ai.slice','ProtectSystem=strict','ProtectHome=true','InaccessiblePaths=/var/lib/localai /etc/localai','NoNewPrivileges=true','MemoryMax=4G','CPUQuota=300%','LoadCredentialEncrypted=ai-backend-key:/etc/credstore.encrypted/localai-ai-key'])assert.ok(unit.includes(directive),directive);
  assert.ok(unit.includes('--api-key-file %d/ai-backend-key'));
- assert.ok(unit.includes('IPAddressDeny=any'));assert.ok(unit.includes('IPAddressAllow=localhost'));
+ assert.ok(unit.includes('PrivateNetwork=true'));assert.ok(unit.includes('RuntimeDirectoryMode=0750'));assert.ok(unit.includes('Group=localai-runtime'));assert.ok(unit.includes('RuntimeDirectory=localai-chat'));
  assert.ok(unit.includes('MemorySwapMax=0'));
  assert.ok(!unit.includes(paths.credential));
  assert.throws(()=>renderWorkerUnit('chat',{...paths,runtime:'/tmp/a%PATH'}));

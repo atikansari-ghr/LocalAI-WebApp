@@ -1,15 +1,17 @@
 import assert from 'node:assert/strict';
 import {execFileSync,spawnSync} from 'node:child_process';
-import {readFileSync,writeFileSync,mkdirSync,existsSync} from 'node:fs';
+import {readFileSync,writeFileSync,mkdirSync,existsSync,readlinkSync,readdirSync} from 'node:fs';
 import {renderChatRouterPresets,renderChatRouterUnit} from '../../services/inference/native.mjs';
 import fallback from '../../services/inference/fallback-manifest.json' with {type:'json'};
 import starter from '../../services/inference/starter-manifest.json' with {type:'json'};
 import {provisionStarter,provisionFallback} from '../../installer/install-ai.mjs';
 import {createServer} from 'node:http';
-import {createInferenceClient} from '../../services/inference/client.mjs';
+import {createInferenceClient,requestPrivateWorker} from '../../services/inference/client.mjs';
+const endpoint='unix:/run/localai-chat/inference.sock';
 
 if(process.platform!=='linux'||process.getuid()!==0||process.env.TARGET_TEST_LXC!=='disposable')throw new Error('Explicit disposable test LXC required');
 const run=(file,args,options={})=>execFileSync(file,args,{encoding:'utf8',timeout:180000,...options}).trim();
+if(spawnSync('getent',['group','localai-runtime'],{stdio:'ignore'}).status!==0)run('groupadd',['--system','localai-runtime']);
 for(const service of ['localai-chat.service','localai-embedding.service','localai-router-validation.service'])assert.notEqual(spawnSync('systemctl',['is-active','--quiet',service]).status,0,'Stop prior private workers first');
 assert.equal(existsSync('/etc/localai/inference.json'),false,'Public runtime must remain inactive during candidate qualification');
 const gatewayPid=run('systemctl',['show','localai.service','-p','MainPID','--value']);assert.ok(Number(gatewayPid)>0);
@@ -21,10 +23,10 @@ const preset='/opt/localai/ai/router-validation/models.ini';writeFileSync(preset
 const unit='/etc/systemd/system/localai-router-validation.service';writeFileSync(unit,renderChatRouterUnit({runtime:'/opt/localai/ai/runtimes/llama-b11669',preset,credential:'/run/credentials/placeholder/ai-backend-key'},{idleSeconds:5}),{mode:0o644});
 run('systemd-analyze',['verify',unit]);run('systemctl',['daemon-reload']);
 const secret=run('systemd-creds',['decrypt','--name=ai-backend-key','/etc/credstore.encrypted/localai-ai-key','-']);
-const post=async(path,body)=>{const response=await fetch('http://127.0.0.1:8081'+path,{method:'POST',headers:{Authorization:'Bearer '+secret,'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(120000)});const data=await response.json();assert.equal(response.status,200,'Native router request failed');return data;};
+const post=async(path,body)=>{const response=await requestPrivateWorker(endpoint,path,{method:'POST',headers:{Authorization:'Bearer '+secret,'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(120000)});const data=await response.json();assert.equal(response.status,200,'Native router request failed');return data;};
 try{
  run('systemctl',['start','localai-router-validation.service','localai-embedding.service']);
- let ready=false;for(let i=0;i<30;i++){try{const response=await fetch('http://127.0.0.1:8081/health',{signal:AbortSignal.timeout(1000)});await response.body?.cancel();if(response.ok){ready=true;break;}}catch{}await new Promise(resolve=>setTimeout(resolve,1000));}assert.ok(ready);
+ let ready=false;for(let i=0;i<30;i++){try{const response=await requestPrivateWorker(endpoint,'/health',{signal:AbortSignal.timeout(1000)});await response.body?.cancel();if(response.ok){ready=true;break;}}catch{}await new Promise(resolve=>setTimeout(resolve,1000));}assert.ok(ready);
  const checks=[];
  for(const model of ['localai-chat','localai-chat-fallback','localai-chat']){
   for(const prompt of ['Reply with ready.','اذكر كلمة عربية واحدة عن السماء.']){
@@ -33,7 +35,7 @@ try{
   }
   const formatted=await post('/apply-template',{model,messages:[{role:'user',content:'ready'}],add_generation_prompt:true,chat_template_kwargs:{enable_thinking:false}});assert.equal(typeof formatted.prompt,'string');
   const tokens=await post('/tokenize',{model,content:formatted.prompt,add_special:true});assert.ok(tokens.tokens.length>0);
-  const listing=await fetch('http://127.0.0.1:8081/models',{headers:{Authorization:'Bearer '+secret},signal:AbortSignal.timeout(5000)});const listed=await listing.json();assert.equal(listing.status,200);
+  const listing=await requestPrivateWorker(endpoint,'/models',{headers:{Authorization:'Bearer '+secret},signal:AbortSignal.timeout(5000)});const listed=await listing.json();assert.equal(listing.status,200);
   assert.ok(listed.data.filter(item=>['loaded','loading'].includes(item.status?.value)).length<=1,'Native router exceeded one loaded chat model');
   checks.push({model,check:'english-arabic-chat-template-tokenizer'});
  }
@@ -44,7 +46,7 @@ try{
   try{
    const buffers=[];for await(const chunk of req)buffers.push(chunk);const body=JSON.parse(Buffer.concat(buffers));
    if(body.model==='localai-chat'&&req.url==='/apply-template'){attempts++;if(blocked){res.writeHead(503);res.end('{}');return;}}
-   const response=await fetch('http://127.0.0.1:8081'+req.url,{method:'POST',headers:{Authorization:'Bearer '+secret,'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(120000)});
+   const response=await requestPrivateWorker(endpoint,req.url,{method:'POST',headers:{Authorization:'Bearer '+secret,'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(120000)});
    res.writeHead(response.status,{'Content-Type':response.headers.get('content-type')??'application/json'});res.end(Buffer.from(await response.arrayBuffer()));
   }catch{res.writeHead(502);res.end('{}');}
  });
@@ -59,6 +61,13 @@ try{
   const restored=await client.chat({messages:[{role:'user',content:'Reply with ready.'}],max_tokens:16});assert.equal(restored.model,'localai-chat');assert.ok(restored.choices[0].message.content);assert.equal(attempts,4);
   checks.push({check:'real-fallback-with-primary-http-fault-circuit-cooldown-and-recovery',auditEvents:events.length});
  }finally{proxy.closeAllConnections();await new Promise(resolve=>proxy.close(resolve));}
+ const routerPid=run('systemctl',['show','localai-router-validation.service','-p','MainPID','--value']);
+ assert.notEqual(readlinkSync('/proc/'+routerPid+'/ns/net'),readlinkSync('/proc/1/ns/net'));
+ const childPids=[...new Set(readdirSync('/proc/'+routerPid+'/task').flatMap(tid=>{try{return readFileSync('/proc/'+routerPid+'/task/'+tid+'/children','utf8').trim().split(/\s+/).filter(Boolean);}catch(error){if(error.code==='ENOENT')return [];throw error;}}))];assert.ok(childPids.length>0);
+ const hostListeners=run('ss',['-ltnp']);for(const pid of childPids){assert.equal(readlinkSync('/proc/'+pid+'/ns/net'),readlinkSync('/proc/'+routerPid+'/ns/net'));assert.ok(!hostListeners.includes('pid='+pid+','));}
+ const denied=spawnSync('runuser',['-u','nobody','--',process.execPath,'--input-type=module','--eval',"import {connect} from 'node:net';const socket=connect('/run/localai-chat/inference.sock');socket.on('connect',()=>{console.log('CONNECTED');socket.destroy();});socket.on('error',error=>console.log(error.code));"],{encoding:'utf8',timeout:5000});assert.equal(denied.stdout.trim(),'EACCES');
+ assert.equal(run('runuser',['-u','localai','-g','localai-runtime','--','curl','--silent','--output','/dev/null','--write-out','%{http_code}','--unix-socket','/run/localai-chat/inference.sock','http://localhost/v1/models']),'401');
+ checks.push({check:'child-listeners-isolated-and-unrelated-user-denied'});
  assert.equal(run('systemctl',['show','localai-ai.slice','-p','MemorySwapCurrent','--value']),'0');
  assert.equal(run('systemctl',['show','localai.service','-p','MainPID','--value']),gatewayPid);
  const report={qualification:'router-tested-unqualified',starterManifest:primary.manifestSha256,fallbackManifest:small.manifestSha256,checks,memory:run('systemctl',['show','localai-ai.slice','-p','MemoryCurrent','-p','MemoryPeak','-p','MemorySwapCurrent'])};

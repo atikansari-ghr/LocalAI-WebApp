@@ -1,12 +1,13 @@
 // Explicit native qualification harness. This does not activate the public API.
 import assert from 'node:assert/strict';
 import {execFileSync,spawnSync} from 'node:child_process';
-import {existsSync,mkdirSync,readFileSync,writeFileSync,chmodSync} from 'node:fs';
+import {existsSync,mkdirSync,readFileSync,writeFileSync,chmodSync,readlinkSync} from 'node:fs';
 import {randomBytes} from 'node:crypto';
 import manifest from '../../services/inference/starter-manifest.json' with {type:'json'};
 import {provisionStarter} from '../../installer/install-ai.mjs';
 import {renderWorkerUnit} from '../../services/inference/native.mjs';
-import {createInferenceClient} from '../../services/inference/client.mjs';
+import {createInferenceClient,requestPrivateWorker} from '../../services/inference/client.mjs';
+const endpoint=port=>port===8081?'unix:/run/localai-chat/inference.sock':'unix:/run/localai-embedding/inference.sock';
 
 if(process.platform!=='linux'||process.getuid()!==0||process.env.TARGET_TEST_LXC!=='disposable')throw new Error('Explicit disposable Debian test LXC required');
 const run=(file,args,options={})=>execFileSync(file,args,{encoding:'utf8',timeout:180000,...options}).trim();
@@ -29,6 +30,7 @@ const versionProbe=spawnSync(runtime+'/llama-server',['--version'],{encoding:'ut
 assert.equal(versionProbe.status,0);const version=(versionProbe.stdout+versionProbe.stderr).trim();assert.match(version,/build 11669, commit 620d2225c/);
 const dependencies=run('ldd',[runtime+'/llama-server']);assert.doesNotMatch(dependencies,/not found/);
 if(spawnSync('id',['localai-inference'],{stdio:'ignore'}).status!==0)run('useradd',['--system','--user-group','--no-create-home','--home-dir','/nonexistent','--shell','/usr/sbin/nologin','localai-inference']);
+if(spawnSync('getent',['group','localai-runtime'],{stdio:'ignore'}).status!==0)run('groupadd',['--system','localai-runtime']);
 run('chown',['root:localai-inference','/opt/localai/ai','/opt/localai/ai/runtimes']);
 run('chmod',['0750','/opt/localai/ai','/opt/localai/ai/runtimes']);
 const credential='/etc/credstore.encrypted/localai-ai-key';mkdirSync('/etc/credstore.encrypted',{recursive:true,mode:0o700});
@@ -60,18 +62,23 @@ try{
   const service='localai-'+profile+'.service';run('systemctl',['start',service]);started.push(service);
   const port=profile==='chat'?8081:8082;let ready=false;
   for(let attempt=0;attempt<120;attempt++){
-   try{const response=await fetch('http://127.0.0.1:'+port+'/health',{headers:{Authorization:'Bearer '+secret},signal:AbortSignal.timeout(2000)});await response.body?.cancel();if(response.ok){ready=true;break;}}catch{}
+   try{const response=await requestPrivateWorker(endpoint(port),'/health',{headers:{Authorization:'Bearer '+secret},signal:AbortSignal.timeout(2000)});await response.body?.cancel();if(response.ok){ready=true;break;}}catch{}
    const state=spawnSync('systemctl',['is-active',service],{encoding:'utf8'}).stdout.trim();
    if(!['active','activating'].includes(state))throw new Error('Worker stopped during model loading');
    await new Promise(resolve=>setTimeout(resolve,1000));
   }
   assert.ok(ready,profile+' failed to load within two minutes');
  }
- const listeners=run('ss',['-ltn']);assert.match(listeners,/127\.0\.0\.1:8081/);assert.match(listeners,/127\.0\.0\.1:8082/);
- assert.doesNotMatch(listeners,/(?:0\.0\.0\.0|\*|\[::\]):808[12]/);
+ const listeners=run('ss',['-ltn']);assert.doesNotMatch(listeners,/:808[12]\s/);
+ for(const profile of ['chat','embedding']){
+  const pid=run('systemctl',['show','localai-'+profile+'.service','-p','MainPID','--value']);assert.notEqual(readlinkSync('/proc/'+pid+'/ns/net'),readlinkSync('/proc/1/ns/net'));
+  const probe=spawnSync('runuser',['-u','nobody','--',process.execPath,'--input-type=module','--eval',"import {connect} from 'node:net';const socket=connect('/run/localai-"+profile+"/inference.sock');socket.on('connect',()=>{console.log('CONNECTED');socket.destroy();});socket.on('error',error=>console.log(error.code));"],{encoding:'utf8',timeout:5000});
+  assert.equal(probe.stdout.trim(),'EACCES');
+  assert.equal(run('runuser',['-u','localai','-g','localai-runtime','--','curl','--silent','--output','/dev/null','--write-out','%{http_code}','--unix-socket','/run/localai-'+profile+'/inference.sock','http://localhost/v1/models']),'401');
+ }
  // Real native requests use synthetic public test phrases only.
  const request=async(port,path,body)=>{
-  const response=await fetch('http://127.0.0.1:'+port+path,{method:'POST',headers:{Authorization:'Bearer '+secret,'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(120000)});
+  const response=await requestPrivateWorker(endpoint(port),path,{method:'POST',headers:{Authorization:'Bearer '+secret,'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(120000)});
   assert.equal(response.status,200,'Native request failed: '+await (response.ok?Promise.resolve(''):response.text()));return response;
  };
  const checks=[];
@@ -105,7 +112,7 @@ try{
  const rss=()=>Object.values(pids).reduce((sum,pid)=>sum+Number(readFileSync('/proc/'+pid+'/status','utf8').match(/^VmRSS:\s+(\d+)/m)[1])*1024,0);
  const loadedRss=rss();let sleeping=false;
  for(let attempt=0;attempt<30;attempt++){
-  const statuses=await Promise.all([8081,8082].map(async port=>{const response=await fetch('http://127.0.0.1:'+port+'/props',{headers:{Authorization:'Bearer '+secret},signal:AbortSignal.timeout(2000)});assert.equal(response.status,200);return (await response.json()).is_sleeping;}));
+  const statuses=await Promise.all([8081,8082].map(async port=>{const response=await requestPrivateWorker(endpoint(port),'/props',{headers:{Authorization:'Bearer '+secret},signal:AbortSignal.timeout(2000)});assert.equal(response.status,200);return (await response.json()).is_sleeping;}));
   if(statuses.every(value=>value===true)){sleeping=true;break;}await new Promise(resolve=>setTimeout(resolve,1000));
  }
  assert.ok(sleeping,'Both workers must enter idle sleep');const asleepRss=rss();assert.ok(loadedRss-asleepRss>300*1024**2,'Idle sleep must release actual resident memory');
@@ -114,7 +121,7 @@ try{
  checks.push({check:'idle-sleep-and-lazy-reload',testIdleSeconds:5,defaultIdleSeconds:900,loadedRss,asleepRss});
  run('systemctl',['kill','--kill-whom=main','--signal=SIGKILL','localai-chat.service']);let restarted=false;
  for(let attempt=0;attempt<45;attempt++){
-  try{const response=await fetch('http://127.0.0.1:8081/health',{headers:{Authorization:'Bearer '+secret},signal:AbortSignal.timeout(2000)});await response.body?.cancel();if(response.ok&&workerPid('chat')!==pids.chat){restarted=true;break;}}catch{}
+  try{const response=await requestPrivateWorker(endpoint(8081),'/health',{headers:{Authorization:'Bearer '+secret},signal:AbortSignal.timeout(2000)});await response.body?.cancel();if(response.ok&&workerPid('chat')!==pids.chat){restarted=true;break;}}catch{}
   await new Promise(resolve=>setTimeout(resolve,1000));
  }
  assert.ok(restarted,'Worker must recover from a terminated process');
@@ -123,11 +130,11 @@ try{
  assert.notEqual(spawnSync('runuser',['-u','localai-inference','--','test','-r','/var/lib/localai/platform.sqlite']).status,0);
  assert.notEqual(spawnSync('runuser',['-u','localai-inference','--','test','-r','/var/lib/localai/master.key']).status,0);
  checks.push({check:'native-worker-crash-restart-and-vault-isolation'});
- const unauthenticated=await fetch('http://127.0.0.1:8081/v1/models',{signal:AbortSignal.timeout(5000)});assert.equal(unauthenticated.status,401);await unauthenticated.body?.cancel();
+ const unauthenticated=await requestPrivateWorker(endpoint(8081),'/v1/models',{signal:AbortSignal.timeout(5000)});assert.equal(unauthenticated.status,401);await unauthenticated.body?.cancel();
  assert.equal(run('systemctl',['show','localai-ai.slice','--property=MemorySwapCurrent','--value']),'0');
  assert.equal(run('systemctl',['show','localai.service','--property=MainPID','--value']),gatewayPid);
  const report={qualification:'workers-loaded-unqualified',manifestSha256:candidate.manifestSha256,version,
   checks,memory:run('systemctl',['show','localai-ai.slice','--property=MemoryCurrent','--property=MemoryPeak','--property=MemorySwapCurrent']),
-  note:'Synthetic native inference only; gateway admission/cancellation/restart qualification still required. Workers stopped after check.'};
+  note:'Synthetic private native evidence only; controlled gateway activation and final phase acceptance still required. Workers stopped after check.'};
  mkdirSync('.localai',{recursive:true,mode:0o700});writeFileSync('.localai/private-workers.json',JSON.stringify(report,null,2),{mode:0o600});console.log(JSON.stringify(report));
 }finally{for(const service of started.reverse())run('systemctl',['stop',service]);}

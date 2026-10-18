@@ -2,7 +2,23 @@ export class InferenceError extends Error{
  constructor(code,status=400){super(code);this.code=code;this.status=status;}
 }
 const fail=(code,status)=>{throw new InferenceError(code,status);};
-function endpoint(value){const url=new URL(value);if(url.protocol!=='http:'||url.hostname!=='127.0.0.1'||!url.port||url.pathname!=='/'||url.username||url.password||url.search||url.hash)throw new TypeError('Private loopback worker endpoint required');return url.origin;}
+function endpoint(value){
+ if(typeof value==='string'&&value.startsWith('unix:')){const path=value.slice(5);if(!/^\/(?:[A-Za-z0-9_.-]+\/)*[A-Za-z0-9_.-]+\.sock$/.test(path)||path.split('/').some(part=>part==='.'||part==='..'))throw new TypeError('Unsafe Unix worker socket');return value;}
+ const url=new URL(value);if(url.protocol!=='http:'||url.hostname!=='127.0.0.1'||!url.port||url.pathname!=='/'||url.username||url.password||url.search||url.hash)throw new TypeError('Private loopback worker endpoint required');return url.origin;
+}
+export function requestPrivateWorker(base,path,{method='GET',headers={},body,signal}={}){
+ const target=endpoint(base);
+ if(!/^\/[a-zA-Z0-9/_-]+(?:\?[a-zA-Z0-9%=_-]+)?$/.test(path))throw new TypeError('Unsafe worker route');
+ if(!target.startsWith('unix:'))return fetch(target+path,{method,headers,body,signal,redirect:'error'});
+ return new Promise((resolve,reject)=>{
+  // A worker can close/recreate its socket after streaming, sleeping or restart.
+  // Fresh local IPC connections avoid reusing a half-closed HTTP pool socket.
+  const request=httpRequest({socketPath:target.slice(5),path,method,headers,signal,agent:false},incoming=>{
+   resolve(new Response(Readable.toWeb(incoming),{status:incoming.statusCode,headers:{'content-type':incoming.headers['content-type']??'application/octet-stream'}}));
+  });
+  request.once('error',reject);request.end(body);
+ });
+}
 function fields(value,allowed){if(!value||Array.isArray(value)||typeof value!=='object'||Object.keys(value).some(key=>!allowed.includes(key)))fail('unsupported_parameter');}
 function text(value,max=32768){if(typeof value!=='string'||!value.trim()||value.length>max)fail('invalid_input');return value;}
 async function boundedJson(response,limit=2*1024**2){
@@ -41,7 +57,7 @@ async function relayStream(response,onChunk,signal,model){
   pending+=decoder.decode();if(!complete||pending.trim())fail('incomplete_worker_stream',502);
  }finally{await reader.cancel().catch(()=>{});reader.releaseLock();}
 }
-export function createInferenceClient({key,chatEndpoint='http://127.0.0.1:8081',embeddingEndpoint='http://127.0.0.1:8082',timeoutMs=120000,mode='balanced',resources=readMemoryBudget,fallbackEnabled=false,onFallback,now=Date.now}={}){
+export function createInferenceClient({key,chatEndpoint='unix:/run/localai-chat/inference.sock',embeddingEndpoint='unix:/run/localai-embedding/inference.sock',timeoutMs=120000,mode='balanced',resources=readMemoryBudget,fallbackEnabled=false,onFallback,now=Date.now}={}){
  if(typeof key!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(key))throw new TypeError('Internal worker credential required');
  const chatBase=endpoint(chatEndpoint),embeddingBase=endpoint(embeddingEndpoint);
  if(!Number.isSafeInteger(timeoutMs)||timeoutMs<100||timeoutMs>120000)throw new TypeError('Invalid inference deadline');
@@ -63,7 +79,7 @@ export function createInferenceClient({key,chatEndpoint='http://127.0.0.1:8081',
   }finally{controller.abort();busy=false;}
  }
  async function post(base,path,body,signal){
-  const response=await fetch(base+path,{method:'POST',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},body:JSON.stringify(body),signal,redirect:'error'});
+  const response=await requestPrivateWorker(base,path,{method:'POST',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},body:JSON.stringify(body),signal});
   if(!response.ok){await response.body?.cancel();fail('worker_unavailable',502);}return response;
  }
  async function tokenCount(base,content,signal,model='localai-embedding'){
@@ -83,6 +99,7 @@ export function createInferenceClient({key,chatEndpoint='http://127.0.0.1:8081',
    if(!Number.isInteger(max)||max<1||max>initialPolicy.maxOutputTokens||!Number.isFinite(temperature)||temperature<0||temperature>2||!Number.isFinite(topP)||topP<=0||topP>1)fail('invalid_generation_limits');
    if(input.stream!==undefined&&typeof input.stream!=='boolean')fail('invalid_stream');
    if(input.stream&&typeof onChunk!=='function')fail('stream_consumer_required');
+   const callerSignal=signal;
    return admitted(async signal=>{
     let delivered=false;
     const runModel=async model=>{
@@ -102,9 +119,9 @@ export function createInferenceClient({key,chatEndpoint='http://127.0.0.1:8081',
     if(fallbackEnabled&&(initialPolicy.emergency||primaryRetryAt>now()))return fallback(initialPolicy.emergency?'resource_pressure':'circuit_open');
     try{const result=await runModel('localai-chat');primaryFailures=0;primaryRetryAt=0;return result;}
     catch(error){
-     if(signal.aborted||delivered||(error instanceof InferenceError&&error.status<500))throw error;
+     if(callerSignal?.aborted||(error instanceof InferenceError&&error.status<500))throw error;
      primaryFailures++;if(primaryFailures>=3)primaryRetryAt=now()+60000;
-     if(!fallbackEnabled)throw error;
+     if(signal.aborted||delivered||!fallbackEnabled)throw error;
      return fallback('primary_unavailable');
     }
    },signal);
@@ -126,3 +143,5 @@ export function createInferenceClient({key,chatEndpoint='http://127.0.0.1:8081',
  };
 }
 import {selectResourceProfile,readMemoryBudget} from './profiles.mjs';
+import {request as httpRequest} from 'node:http';
+import {Readable} from 'node:stream';
