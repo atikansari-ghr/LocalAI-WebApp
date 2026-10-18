@@ -6,6 +6,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { once } from 'node:events';
 import { spawnSync } from 'node:child_process';
+import { createServer as createHttpsServer } from 'node:https';
+import { createServer as createHttpServer } from 'node:http';
 import { createGateway } from '../apps/gateway/server.mjs';
 import { openState } from '../packages/database/index.mjs';
 import { loadConfig } from '../packages/shared/config.mjs';
@@ -55,6 +57,33 @@ test('installer handles an IPv6 loopback endpoint',async t=>{
  try {await once(server,'listening');}catch(error){if(['EAFNOSUPPORT','EADDRNOTAVAIL'].includes(error.code)){t.skip('Host has no IPv6 loopback');return;}throw error;}
  t.after(()=>new Promise(resolve=>server.close(resolve)));
  assert.equal(await probeGateway(loadConfig({LOCALAI_HOST:'::1',LOCALAI_PORT:String(server.address().port)}),process.pid),true);
+});
+
+test('direct TLS installation probes verify certificates hostname and PID without HTTP fallback',async t=>{
+ const cert=fileURLToPath(new URL('./fixtures/tls-test.crt',import.meta.url));
+ const key=fileURLToPath(new URL('./fixtures/tls-test.key',import.meta.url));
+ const server=createHttpsServer({cert:readFileSync(cert),key:readFileSync(key)},(req,res)=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify({status:'alive',pid:process.pid}));});
+ server.listen(0,'127.0.0.1');await once(server,'listening');
+ t.after(()=>new Promise(resolve=>server.close(resolve)));
+ const config=loadConfig({LOCALAI_TRANSPORT:'tls',LOCALAI_ORIGIN:'https://localhost',LOCALAI_TLS_CERT:cert,LOCALAI_TLS_KEY:key,LOCALAI_PORT:String(server.address().port)});
+ assert.equal(await probeGateway(config,process.pid),true);
+ assert.equal(await probeGateway({...config,origin:'https://wrong.localai.test'},process.pid),false);
+ assert.equal(await probeGateway(config,process.pid+1000000),false);
+ assert.equal(await probeGateway({...config,transport:'loopback'},process.pid),false);
+ assert.equal(await probeGateway({...config,tlsCert:key},process.pid),false);
+});
+
+test('probe deadline covers a slow response even when periodic bytes prevent socket inactivity',async t=>{
+ const server=createHttpServer((req,res)=>{
+  res.setHeader('Content-Type','application/json');
+  const trickle=setInterval(()=>res.write(' '),250);
+  const complete=setTimeout(()=>{clearInterval(trickle);res.end(JSON.stringify({status:'alive',pid:process.pid}));},3000);
+  res.on('close',()=>{clearInterval(trickle);clearTimeout(complete);});
+ });
+ server.listen(0,'127.0.0.1');await once(server,'listening');
+ t.after(()=>new Promise(resolve=>server.close(resolve)));
+ const config=loadConfig({LOCALAI_PORT:String(server.address().port)});
+ assert.equal(await probeGateway(config,process.pid),false,'Periodic bytes must not extend the absolute two-second deadline');
 });
 test('activation rollback restores application runtime and unit together after each partial activation', {skip:process.platform==='win32'?'POSIX activation is exercised on Linux CI':false},t=>{
  const dir=fixture(t),base=join(dir,'opt'),unit=join(dir,'localai.service'),journal=join(dir,'journal.json');

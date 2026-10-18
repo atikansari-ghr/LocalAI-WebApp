@@ -27,7 +27,7 @@ LOCALAI_TRUSTED_PROXIES; default empty. Comma-separated IP addresses or CIDRs, r
 
 ## TLS certificate
 Anchor: tls-certificate.
-LOCALAI_TLS_CERT; default empty. Path to a PEM certificate chain, required only for direct tls mode. The service account must be able to read it. Use a certificate trusted by client browsers and renew it before expiry. Nginx Proxy Manager owns the browser-facing certificate in proxy mode.
+LOCALAI_TLS_CERT; default empty. Path to a PEM certificate chain, required only for direct tls mode. The service account must be able to read it. Use a certificate trusted by client browsers and renew it before expiry. The installer probes direct TLS using normal certificate validation and the configured DNS origin for hostname/SNI verification, even when connecting to a local IP. Its trust store includes Node's public roots and the explicitly configured certificate chain, permitting private/self-signed local identities without disabling verification. The configured chain is an administrator trust input; protect it against unauthorized replacement. Browser trust must be configured independently. Nginx Proxy Manager owns the browser-facing certificate in proxy mode.
 
 ## TLS private key
 Anchor: tls-private-key.

@@ -4,6 +4,9 @@ import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { DatabaseSync, backup } from 'node:sqlite';
+import { request as requestHttp } from 'node:http';
+import { request as requestHttps } from 'node:https';
+import { rootCertificates } from 'node:tls';
 import { loadConfig } from '../packages/shared/config.mjs';
 
 export function readInstallationConfig(path) {
@@ -45,13 +48,26 @@ export async function backupInstallation(config) {
   finally {db.close();}
 }
 export async function probeGateway(config,expectedPid) {
+  let deadline;
   try {
     if(!Number.isSafeInteger(expectedPid)||expectedPid<=0)return false;
-    const host=config.host==='::1'?'[::1]':config.host;
-    const response=await fetch('http://'+host+':'+config.port+'/health/live',{signal:AbortSignal.timeout(2000),redirect:'error'});
-    const body=await response.json();
-    return response.status===200&&body.status==='alive'&&body.pid===expectedPid;
+    const tls=config.transport==='tls';
+    const hostname=config.host==='0.0.0.0'?'127.0.0.1':config.host==='::'?'::1':config.host;
+    const options={hostname,port:config.port,path:'/health/live',method:'GET',agent:false,timeout:2000};
+    if(tls)Object.assign(options,{servername:new URL(config.origin).hostname,rejectUnauthorized:true,minVersion:'TLSv1.2',ca:[...rootCertificates,readFileSync(config.tlsCert)]});
+    const controller=new AbortController();options.signal=controller.signal;
+    deadline=setTimeout(()=>controller.abort(),2000);deadline.unref();
+    return await new Promise((resolve,reject)=>{
+      const request=(tls?requestHttps:requestHttp)(options,response=>{
+        let bytes=0;const chunks=[];
+        response.on('data',chunk=>{bytes+=chunk.length;if(bytes>16384){request.destroy(new Error('Probe response too large'));return;}chunks.push(chunk);});
+        response.on('error',reject);
+        response.on('end',()=>{try{const body=JSON.parse(Buffer.concat(chunks).toString('utf8'));resolve(response.statusCode===200&&body.status==='alive'&&body.pid===expectedPid);}catch{resolve(false);}});
+      });
+      request.on('error',reject);request.on('timeout',()=>request.destroy(new Error('Probe timeout')));request.end();
+    });
   }catch{return false;}
+  finally{clearTimeout(deadline);}
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(realpathSync(process.argv[1])).href) {
   try {
