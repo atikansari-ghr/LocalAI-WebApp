@@ -2,7 +2,7 @@ name: Foundation
 on:
   pull_request:
   push:
-    branches: [main, 'feat/**', 'docs/**']
+    branches: [main]
 permissions:
   contents: read
 jobs:

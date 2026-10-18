@@ -5,7 +5,7 @@ Repository: https://github.com/atikansari-ghr/LocalAI-WebApp
 ## Authority and scope
 Build an independent private Local AI platform for Workspace users and API clients. This document consolidates all 110 Local AI decisions recovered from “Branch · PDMS App Development”. The numbered register below preserves traceability; this document's precedence rules resolve historical contradictions. Earlier PDMS performance/sign-in decisions are excluded. No PDMS or Family Calendar repository/application changes are authorized. Their integrations are contracts and synthetic examples only.
 
-Implement in controlled feature branches and PRs. Never report an unexecuted check as passed, merge failing critical checks, publish an incomplete production release, or substitute mock inference for working inference. Every phase ships code, meaningful tests, documentation, and evidence. Current stage: specification review; product implementation has not started.
+Implement in controlled feature branches and PRs. Never report an unexecuted check as passed, merge failing critical checks, publish an incomplete production release, or substitute mock inference for working inference. Every phase ships code, meaningful tests, documentation, and evidence. Specification approved on 2026-10-18; foundation implementation is tracked in docs/progress.md. Later phases and production qualification remain pending.
 
 ## Precedence
 Latest explicit user requirements prevail, then later confirmed decisions, then earlier decisions. Specifically:

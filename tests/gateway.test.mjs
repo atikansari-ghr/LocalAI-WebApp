@@ -16,7 +16,7 @@ async function fixture(t) {
 }
 test('liveness reflects process health while readiness blocks incomplete platform',async t=>{
   const {base}=await fixture(t);const live=await fetch(base+'/health/live');
-  assert.equal(live.status,200);assert.deepEqual(await live.json(),{status:'alive'});
+  assert.equal(live.status,200);assert.deepEqual(await live.json(),{status:'alive',pid:process.pid});
   const ready=await fetch(base+'/health/ready');assert.equal(ready.status,503);
   assert.equal((await ready.json()).status,'not_ready');assert.equal(ready.headers.get('cache-control'),'no-store');
 });

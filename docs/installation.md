@@ -21,7 +21,7 @@ Do not execute a moving branch from a remote pipe. The installer requires a clea
 
 The installer creates an unprivileged localai account; root-owned immutable source deployments at /opt/localai/releases/COMMIT; pinned runtimes at /opt/localai/runtimes; configuration at /etc/localai/gateway.env; state at /var/lib/localai; cache and logs in their respective /var directories. It does not expose the service through a reverse proxy or open firewall ports. Application output goes to the systemd journal.
 
-Existing configuration and state are preserved on rerun. Before a migration, an exclusive, integrity-checked online database backup is saved under /var/lib/localai/pre-install-backups. These are sensitive development recovery copies with no automated retention/encryption; administrator review is required. They do not qualify as the full backup/restore feature.
+Existing configuration and state are preserved on rerun. Initial configuration is prepared and validated separately, then published atomically; an incomplete existing file fails validation. All three documented environment keys must be present in the installed configuration. Before a migration, an exclusive, integrity-checked online database backup is saved under the configured state directory's pre-install-backups subdirectory. These are sensitive development recovery copies with no automated retention/encryption; administrator review is required. They do not qualify as the full backup/restore feature.
 
 ## Diagnostics
 ```sh
@@ -33,7 +33,7 @@ curl --noproxy '*' http://127.0.0.1:1234/health/ready
 Liveness 200 proves only a running gateway; readiness 503 is expected for this incomplete phase. A port conflict, invalid configuration, migration checksum drift or unwritable/corrupt database prevents startup. Do not delete state or modify already-applied migration files to suppress errors.
 
 ## Recovery boundaries
-A failed activation attempts to restore previous code and leaves state untouched. Automatic code rollback is not a guarantee of schema rollback. The initial migration is additive; future migrations require tested downgrade/restore procedures before installation is accepted.
+A failed activation attempts to restore previous code, runtime link and service unit together using a protected journal at /opt/localai/activation.json. The journal is written before activation, and a later installer run recovers an interrupted activation. Health checks use the configured host/port and require the responding gateway PID to match systemd's MainPID. The installer preserves state. Automatic code rollback is not a guarantee of schema rollback. The initial migration is additive; future migrations require tested downgrade/restore procedures before installation is accepted.
 
 For a database restore: stop the service, preserve the current database plus WAL/SHM together in a protected recovery directory, verify the chosen backup offline, and restore it to a separate test directory first. Never overwrite a live database. Full automated encrypted backup, isolated restore and tombstone replay remain later-phase work.
 

@@ -10,7 +10,7 @@ export function createGateway({ state }) {
     const send = (status, body) => { response.writeHead(status);response.end(JSON.stringify(body)); };
     if (!['/health/live','/health/ready'].includes(request.url)) return send(404,{error:{code:'not_found'}});
     if (request.method !== 'GET') { response.setHeader('Allow','GET');return send(405,{error:{code:'method_not_allowed'}}); }
-    if (request.url === '/health/live') return send(200,{status:'alive'});
+    if (request.url === '/health/live') return send(200,{status:'alive',pid:process.pid});
     try {
       if (!state.health().ok) throw new Error('State unavailable');
       return send(503,{status:'not_ready',blockers:['setup_not_implemented','runtime_not_provisioned','release_not_qualified']});
