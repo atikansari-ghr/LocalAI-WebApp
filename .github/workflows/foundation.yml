@@ -19,6 +19,7 @@ jobs:
         with:
           node-version: '24.19.0'
       - run: npm ci --ignore-scripts
+      - run: npm ci --ignore-scripts --prefix services/documents/parsers
       - run: npm test
       - run: npm run check:docs
       - name: Installer syntax and unsupported-host rejection
