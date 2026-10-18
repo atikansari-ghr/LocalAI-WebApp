@@ -56,3 +56,7 @@ The gateway adapter defaults to `unix:/run/localai-chat/inference.sock` and `uni
 Fresh IPC connections avoid pooled stale sockets after native streaming/sleep/restart. TCP endpoints remain constructor options for isolated test fixtures; the deployed defaults use Unix sockets. Missing namespace support or socket permissions must block installation rather than fall back to exposed child listeners.
 
 Three internal primary deadlines or failed partial streams open the circuit for subsequent requests. The affected current request is never retried after its deadline or first delivered chunk; explicit caller cancellation does not count as a primary failure.
+
+## Qualification boundary
+
+The gateway's qualification loader accepts only a protected root-owned activation record matching its immutable source revision, a fingerprint of runtime/security/gateway code and dependency locks, pinned starter/fallback manifests, mandatory native checks, exact installed unit hashes and the immutable preset hash. It reads the backend key from its private systemd credential directory. Missing evidence leaves inference disabled; mismatched evidence fails closed. No browser/API request or environment boolean can claim qualification. The evidence generator and reversible activation workflow are still under implementation, so no live activation record has been published. Synthetic loader fixtures are explicitly separate from deployed evidence.

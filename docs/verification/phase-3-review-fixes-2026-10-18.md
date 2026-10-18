@@ -28,3 +28,5 @@ The adapter now distinguishes the caller's signal from its internal deadline. Th
 ## Gate status
 
 Affected native harnesses pass with the fix. The clean-source full Debian suite and both CI jobs must pass for the final fix commit. Missing controlled activation, matching qualification evidence, deployment/recovery checks and later full-platform gates remain blockers. The enrolled account was not modified; no runtime activation file or production release was published.
+
+Verified final fix commit d233ecc:92/92 tests passed on clean actual Debian with no skips; both required GitHub checks passed. Both updated native harnesses passed, including the protected socket-access group and child namespace assertions. This resolves the two Important core findings; it does not accept the later activation implementation.
