@@ -30,3 +30,11 @@ test('ZIP cancellation rejects promptly releases work and does not poison a subs
  assert.equal((await readZipDocument(input(bytes))).entries[0].content.toString(),'safe');
  for(const limits of [{maxEntries:0},{maxExpandedBytes:Infinity},{maxArchiveDepth:3},{timeoutMs:0},{ignoreCrc:true}])await assert.rejects(readZipDocument(input(bytes),{limits}));
 });
+
+test('ZIP reader rejects corrupt data descriptors and renamed native executable families',async()=>{
+ for(const field of [4,8,12]){
+  const bytes=makeZip([{name:'a.txt',bytes:'payload',method:8,flags:0x808}]),offset=bytes.indexOf(Buffer.from([0x50,0x4b,0x07,0x08]));bytes.writeUInt32LE(123,offset+field);
+  await assert.rejects(readZipDocument(input(bytes)),/archive_descriptor_mismatch/);
+ }
+ for(const hex of ['feedface','cefaedfe','feedfacf','cffaedfe','cafebabe','bebafeca'])await assert.rejects(readZipDocument(input(makeZip([{name:'renamed.txt',bytes:Buffer.from(hex,'hex')}]))),/archive_executable_content/);
+});

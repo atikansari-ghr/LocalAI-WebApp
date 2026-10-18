@@ -36,7 +36,7 @@ function archivePath(value,directory){
  if(!path||Buffer.byteLength(path)>512||parts.length>16||/[\\:\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/u.test(path)||parts.some(part=>!part||part==='.'||part==='..'||/[. ]$/.test(part)||/^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)/i.test(part)))fail('archive_unsafe_path');
  return {name:directory?path+'/':path,key:path.toLowerCase(),path};
 }
-function executableBytes(bytes){return bytes.subarray(0,4).equals(Buffer.from([127,69,76,70]))||(bytes.length>=64&&bytes[0]===77&&bytes[1]===90)||bytes.subarray(0,2).toString()==='#!';}
+function executableBytes(bytes){if(bytes.length>=4&&['feedface','cefaedfe','feedfacf','cffaedfe','cafebabe','bebafeca'].includes(bytes.subarray(0,4).toString('hex')))return true;return bytes.subarray(0,4).equals(Buffer.from([127,69,76,70]))||(bytes.length>=64&&bytes[0]===77&&bytes[1]===90)||bytes.subarray(0,2).toString()==='#!';}
 async function readArchive(input,state,depth){
  state.check();if(depth>state.policy.maxArchiveDepth)fail('archive_depth_limit');
  const document=inspectDocument(input);if(document.format!=='zip')fail('office_parser_unavailable');
@@ -61,7 +61,13 @@ async function readArchive(input,state,depth){
    if(localName!==entry.fileName||local.generalPurposeBitFlag!==entry.generalPurposeBitFlag||local.compressionMethod!==entry.compressionMethod)fail('archive_header_mismatch');
    const descriptor=Boolean(entry.generalPurposeBitFlag&8);
    for(const [actual,expected]of [[local.crc32,entry.crc32],[local.compressedSize,compressed],[local.uncompressedSize,size]])if(actual!==expected&&!(descriptor&&actual===0))fail('archive_header_mismatch');
-   const start=entry.relativeOffsetOfLocalHeader,end=local.fileDataStart+compressed;
+   const start=entry.relativeOffsetOfLocalHeader;let end=local.fileDataStart+compressed;
+   if(descriptor){
+    if(end+12>footer.offset)fail('archive_descriptor_mismatch');
+    const signed=bytes.readUInt32LE(end)===0x08074b50,at=end+(signed?4:0);
+    if(at+12>footer.offset||bytes.readUInt32LE(at)!==entry.crc32||bytes.readUInt32LE(at+4)!==compressed||bytes.readUInt32LE(at+8)!==size)fail('archive_descriptor_mismatch');
+    end=at+12;
+   }
    if(!Number.isSafeInteger(start)||start<0||end>footer.offset||ranges.some(range=>start<range.end&&end>range.start))fail('archive_overlapping_records');ranges.push({start,end});
    let content=Buffer.alloc(0),checksum=0;
    if(!directory){
