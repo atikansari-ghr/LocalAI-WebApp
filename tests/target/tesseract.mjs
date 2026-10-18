@@ -15,7 +15,8 @@ for(const [sample,language]of [['english','eng'],['arabic','ara']]){
  const rows=tsv.trimEnd().split('\n');assert.equal(rows.shift(),'level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext');
  const words=rows.map(row=>row.split('\t')).filter(fields=>fields[0]==='5'&&fields.slice(11).join('\t').trim()).map(fields=>({text:fields.slice(11).join('\t'),confidence:Number(fields[10])/100,left:Number(fields[6]),top:Number(fields[7]),width:Number(fields[8]),height:Number(fields[9])}));
  assert.ok(words.length>0);for(const word of words){assert.ok(Number.isFinite(word.confidence)&&word.confidence>=0&&word.confidence<=1);assert.ok(word.left>=0&&word.top>=0&&word.width>0&&word.height>0&&word.left+word.width<=900&&word.top+word.height<=140);}
- const text=words.map(word=>word.text).join(' ');if(language==='eng'){assert.match(text,/LOCAL AI TEST 1234/);}else{assert.match(text,/مرحبا/);assert.match(text,/بالعالم/);}
- results.push({language,elapsedMs:Math.round(performance.now()-started),syntheticText:text,wordCount:words.length,coordinateProvenance:true});
+ const text=words.map(word=>word.text).join(' '),expected=language==='eng'?'LOCAL AI TEST 1234':'مرحبا بالعالم';
+ results.push({language,elapsedMs:Math.round(performance.now()-started),syntheticText:text,expected,exactTextPassed:text===expected,manualReviewRequired:text!==expected,wordCount:words.length,coordinateProvenance:true});
 }
-console.log(JSON.stringify({scope:'isolated-ocr-candidate',engine:'tesseract',version,acceptedLanguages:['en','ar'],results,cpuThreads:1,activated:false,fullOcrGate:'blocked'}));
+console.log(JSON.stringify({scope:'isolated-ocr-candidate',engine:'tesseract',version,actuallyTested:['en','ar'],results,cpuThreads:1,activated:false,fullOcrGate:'blocked'}));
+assert.ok(results.every(result=>result.exactTextPassed),'Strict synthetic recognition benchmark failed; retain results and require review, not a qualified capability claim');
