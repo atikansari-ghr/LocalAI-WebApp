@@ -6,7 +6,7 @@ import {validateStarterManifest,validateFallbackModel} from './assets.mjs';
 import starter from './starter-manifest.json' with {type:'json'};
 import fallback from './fallback-manifest.json' with {type:'json'};
 
-export const REQUIRED_NATIVE_CHECKS=Object.freeze(['english-chat','arabic-chat','english-arabic-embeddings','native-sse-stream','gateway-adapter-real-tokenizer-context-cancellation-and-reuse','idle-sleep-and-lazy-reload','native-worker-crash-restart-and-vault-isolation','real-fallback-with-primary-http-fault-circuit-cooldown-and-recovery','child-listeners-isolated-and-unrelated-user-denied']);
+export const REQUIRED_NATIVE_CHECKS=Object.freeze(['english-chat','arabic-chat','english-arabic-embeddings','native-sse-stream','gateway-adapter-real-tokenizer-context-cancellation-and-reuse','idle-sleep-and-lazy-reload','native-worker-crash-restart-and-vault-isolation','real-fallback-with-primary-http-fault-circuit-cooldown-and-recovery','child-listeners-isolated-and-unrelated-user-denied','isolated-native-activation-rollback']);
 function exactKeys(value,keys){if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).sort().join(',')!==[...keys].sort().join(','))throw new Error('Unexpected qualification fields');}
 function validateSuite(suite){
  exactKeys(suite,['tests','passed','failed','skipped','cancelled']);
@@ -29,9 +29,9 @@ export function parseNativeTestSummary(output){
  }
  validateSuite(result);return Object.freeze(result);
 }
-export function combineNativeQualification({identity,suite,workers,router}){
- if(workers?.qualification!=='workers-loaded-unqualified'||router?.qualification!=='router-tested-unqualified'||workers.manifestSha256!==identity.starterManifest||router.starterManifest!==identity.starterManifest||router.fallbackManifest!==identity.fallbackManifest||!Array.isArray(workers.checks)||!Array.isArray(router.checks))throw new Error('Native report identity mismatch');
- const observed=new Set([...workers.checks,...router.checks].map(item=>item?.check));
+export function combineNativeQualification({identity,suite,workers,router,activation}){
+ if(workers?.qualification!=='workers-loaded-unqualified'||router?.qualification!=='router-tested-unqualified'||activation?.qualification!=='activation-fixture-tested'||workers.manifestSha256!==identity.starterManifest||router.starterManifest!==identity.starterManifest||router.fallbackManifest!==identity.fallbackManifest||!Array.isArray(workers.checks)||!Array.isArray(router.checks)||!Array.isArray(activation.checks)||!activation.checks.some(item=>item?.check==='isolated-native-activation-rollback'))throw new Error('Native report identity mismatch');
+ const observed=new Set([...workers.checks,...router.checks,...activation.checks].map(item=>item?.check));
  const checks=REQUIRED_NATIVE_CHECKS.filter(check=>observed.has(check));
  return validateQualification({schemaVersion:1,scope:'private-preview',...identity,suite,checks},identity);
 }
@@ -82,7 +82,7 @@ export function loadQualifiedInference({sourceRoot,reportPath='/etc/localai/infe
  exactKeys(record.units,['chat','embedding','slice']);
  const files={chat:'/etc/systemd/system/localai-chat.service',embedding:'/etc/systemd/system/localai-embedding.service',slice:'/etc/systemd/system/localai-ai.slice'};
  for(const [name,file]of Object.entries(files)){if(!/^[a-f0-9]{64}$/.test(record.units[name])||digest(readProtectedFile(file))!==record.units[name])throw new Error('Qualified worker configuration mismatch');}
- if(!/^[a-f0-9]{64}$/.test(record.presetHash)||digest(readProtectedFile('/opt/localai/ai/configs/'+record.qualification.sourceCommit+'/chat.ini'))!==record.presetHash)throw new Error('Qualified model preset mismatch');
+ if(!/^[a-f0-9]{64}$/.test(record.presetHash)||digest(readProtectedFile('/etc/localai-runtime/models/'+record.qualification.sourceCommit+'/chat.ini'))!==record.presetHash)throw new Error('Qualified model preset mismatch');
  if(typeof credentialsDirectory!=='string'||!/^\/(?:[A-Za-z0-9_.-]+\/)*[A-Za-z0-9_.-]+$/.test(credentialsDirectory)||credentialsDirectory.split('/').some(part=>part==='.'||part==='..'))throw new Error('Native systemd credential directory required');
  const key=readProtectedFile(join(credentialsDirectory,'ai-backend-key'),{credential:true}).toString('utf8').replace(/\n$/,'');
  return createInferenceClient({key,mode,fallbackEnabled:true,onFallback});

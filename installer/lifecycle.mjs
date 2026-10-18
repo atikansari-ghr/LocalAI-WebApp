@@ -47,13 +47,12 @@ export async function backupInstallation(config) {
   } catch(error){if(reserved)unlinkSync(destination);throw error;}
   finally {db.close();}
 }
-export async function probeGateway(config,expectedPid) {
+async function readGatewayHealth(config,path) {
   let deadline;
   try {
-    if(!Number.isSafeInteger(expectedPid)||expectedPid<=0)return false;
     const tls=config.transport==='tls';
     const hostname=config.host==='0.0.0.0'?'127.0.0.1':config.host==='::'?'::1':config.host;
-    const options={hostname,port:config.port,path:'/health/live',method:'GET',agent:false,timeout:2000};
+    const options={hostname,port:config.port,path,method:'GET',agent:false,timeout:2000};
     if(tls)Object.assign(options,{servername:new URL(config.origin).hostname,rejectUnauthorized:true,minVersion:'TLSv1.2',ca:[...rootCertificates,readFileSync(config.tlsCert)]});
     const controller=new AbortController();options.signal=controller.signal;
     deadline=setTimeout(()=>controller.abort(),2000);deadline.unref();
@@ -62,12 +61,20 @@ export async function probeGateway(config,expectedPid) {
         let bytes=0;const chunks=[];
         response.on('data',chunk=>{bytes+=chunk.length;if(bytes>16384){request.destroy(new Error('Probe response too large'));return;}chunks.push(chunk);});
         response.on('error',reject);
-        response.on('end',()=>{try{const body=JSON.parse(Buffer.concat(chunks).toString('utf8'));resolve(response.statusCode===200&&body.status==='alive'&&body.pid===expectedPid);}catch{resolve(false);}});
+        response.on('end',()=>{try{resolve({status:response.statusCode,body:JSON.parse(Buffer.concat(chunks).toString('utf8'))});}catch{resolve(null);}});
       });
       request.on('error',reject);request.on('timeout',()=>request.destroy(new Error('Probe timeout')));request.end();
     });
-  }catch{return false;}
+  }catch{return null;}
   finally{clearTimeout(deadline);}
+}
+export async function probeGateway(config,expectedPid){
+ if(!Number.isSafeInteger(expectedPid)||expectedPid<=0)return false;
+ const result=await readGatewayHealth(config,'/health/live');return result?.status===200&&result.body.status==='alive'&&result.body.pid===expectedPid;
+}
+export async function probeGatewayRuntime(config){
+ const result=await readGatewayHealth(config,'/health/ready'),blockers=result?.body?.blockers;
+ return result?.status===503&&result.body.status==='not_ready'&&Array.isArray(blockers)&&blockers.includes('release_not_qualified')&&!blockers.some(value=>['runtime_not_provisioned','runtime_unavailable','state_unavailable'].includes(value));
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(realpathSync(process.argv[1])).href) {
   try {

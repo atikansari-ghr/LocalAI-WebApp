@@ -33,8 +33,9 @@ export function qualifyPrivateRuntime(){
  execute('workers',['tests/target/private-workers.mjs'],{native:true});
  execute('router',['tests/target/router.mjs'],{native:true});
  execute('loader',['tests/target/qualification.mjs'],{native:true});
+ execute('activation',['tests/target/native-activation.mjs'],{native:true});
  const reports={};
- for(const [name,file]of Object.entries({workers:'private-workers.json',router:'router.json'})){
+ for(const [name,file]of Object.entries({workers:'private-workers.json',router:'router.json',activation:'native-activation.json'})){
   const path=join(storage,file),stat=lstatSync(path);assertProtectedRecord(stat);if(stat.mtimeMs<started||stat.size>65536)throw new Error('Stale/oversized native report');reports[name]=JSON.parse(readFileSync(path,'utf8'));
  }
  if(run('git',['status','--porcelain'])||run('git',['rev-parse','HEAD'])!==revision)throw new Error('Source changed during qualification');

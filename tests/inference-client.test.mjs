@@ -149,3 +149,8 @@ test('failed partial streams influence subsequent circuit decisions while their 
  assert.equal(primary,3);assert.equal(events.length,0);
  let output='';await client.chat(input,{onChunk:chunk=>{output+=Buffer.from(chunk).toString();}});assert.equal(primary,3);assert.equal(events.length,1);assert.ok(output.includes('localai-chat-fallback'));
 });
+test('health checks verify both private workers without taking the generation slot',async t=>{
+ let healthy=true;const endpoint=await fixture(t,(req,res)=>{res.statusCode=healthy?200:503;res.end(JSON.stringify({status:'ok'}));});
+ const client=createInferenceClient({key:'a'.repeat(43),chatEndpoint:endpoint,embeddingEndpoint:endpoint});assert.equal(await client.health(),true);assert.equal(client.busy,false);
+ healthy=false;assert.equal(await client.health(),false);assert.equal(client.busy,false);
+});

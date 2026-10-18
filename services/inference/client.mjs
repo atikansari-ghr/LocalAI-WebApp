@@ -89,6 +89,11 @@ export function createInferenceClient({key,chatEndpoint='unix:/run/localai-chat/
  }
  return {
   get busy(){return busy;},
+  async health(){
+   const checks=await Promise.all([chatBase,embeddingBase].map(async base=>{
+    try{const response=await requestPrivateWorker(base,'/health',{headers:{Authorization:'Bearer '+key},signal:AbortSignal.timeout(2000)});if(!response.ok){await response.body?.cancel();return false;}return (await boundedJson(response,16384)).status==='ok';}catch{return false;}
+   }));return checks.every(Boolean);
+  },
   async chat(input,{signal,onChunk}={}){
    fields(input,['model','messages','max_tokens','temperature','top_p','stream']);
    if(input.model!==undefined&&input.model!=='localai-chat')fail('unsupported_model');

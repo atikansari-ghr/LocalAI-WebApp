@@ -7,10 +7,10 @@ import { join } from 'node:path';
 import { createGateway } from '../apps/gateway/server.mjs';
 import { openState } from '../packages/database/index.mjs';
 
-async function fixture(t) {
+async function fixture(t,services={}) {
   const dir = mkdtempSync(join(tmpdir(),'localai-http-'));
   const state = openState(join(dir,'state.sqlite'));
-  const server = createGateway({ state }); server.listen(0,'127.0.0.1'); await once(server,'listening');
+  const server = createGateway({ state,...services }); server.listen(0,'127.0.0.1'); await once(server,'listening');
   t.after(async()=>{await new Promise(resolve=>server.close(resolve));state.close();rmSync(dir,{recursive:true,force:true});});
   return {state,base:'http://127.0.0.1:'+server.address().port};
 }
@@ -32,4 +32,9 @@ test('storage failure marks readiness unavailable and hides internal exception d
   const {base,state}=await fixture(t); const close=state.close; state.close=()=>{};close();
   const r=await fetch(base+'/health/ready'); assert.equal(r.status,503);
   assert.deepEqual((await r.json()).blockers,['state_unavailable']);
+});
+test('qualified runtime health removes only the runtime blocker while production release stays blocked',async t=>{
+ let healthy=true;const {base}=await fixture(t,{auth:{status:()=> 'ready'},inference:{health:async()=>healthy}});
+ const loaded=await (await fetch(base+'/health/ready')).json();assert.deepEqual(loaded.blockers,['release_not_qualified']);
+ healthy=false;const stopped=await (await fetch(base+'/health/ready')).json();assert.deepEqual(stopped.blockers,['runtime_unavailable','release_not_qualified']);
 });

@@ -7,7 +7,7 @@ import {REQUIRED_NATIVE_CHECKS,expectedQualificationIdentity,loadQualifiedInfere
 
 if(process.platform!=='linux'||process.getuid()!==0||process.env.TARGET_TEST_LXC!=='disposable')throw new Error('Explicit disposable Linux root fixture required');
 const temporary=mkdtempSync('/tmp/localai-qualification-'),revision=randomBytes(20).toString('hex'),source=join(temporary,revision),credentials=join(temporary,'credentials');
-const presetDirectory='/opt/localai/ai/configs/'+revision,preset=join(presetDirectory,'chat.ini'),digest=value=>createHash('sha256').update(value).digest('hex');
+const presetDirectory='/etc/localai-runtime/models/'+revision,preset=join(presetDirectory,'chat.ini'),digest=value=>createHash('sha256').update(value).digest('hex');
 const reportPath=join(temporary,'fixture-only.json');let createdPreset=false;
 try{
  mkdirSync(source);mkdirSync(credentials,{mode:0o700});
@@ -27,5 +27,5 @@ try{
  console.log(JSON.stringify({check:'isolated-qualification-loader',sourceTamperingRejected:true,unsafeRecordRejected:true,unsafeCredentialRejected:true,skipsRejected:true,realActivationPublished:false}));
 }finally{
  assert.ok(resolve(temporary).startsWith('/tmp/localai-qualification-'));rmSync(temporary,{recursive:true,force:true});
- if(createdPreset){assert.equal(dirname(resolve(presetDirectory)),'/opt/localai/ai/configs');assert.equal(basename(presetDirectory),revision);rmSync(presetDirectory,{recursive:true,force:true});}
+ if(createdPreset){assert.equal(dirname(resolve(presetDirectory)),'/etc/localai-runtime/models');assert.equal(basename(presetDirectory),revision);rmSync(presetDirectory,{recursive:true,force:true});}
 }
