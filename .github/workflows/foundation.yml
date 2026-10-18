@@ -26,6 +26,7 @@ jobs:
         shell: bash
         run: |
           bash -n installer/install.sh
+          bash -n installer/install-ai.sh
           if bash installer/install.sh --check; then
             echo "Unexpectedly accepted Ubuntu as Debian 13"
             exit 1

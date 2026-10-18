@@ -1,0 +1,11 @@
+[Unit]
+Description=Local AI aggregate private CPU inference budget
+
+[Slice]
+CPUAccounting=true
+MemoryAccounting=true
+CPUQuota=300%
+MemoryHigh=4500M
+MemoryMax=5G
+MemorySwapMax=0
+TasksMax=128
