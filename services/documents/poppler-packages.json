@@ -1,0 +1,415 @@
+{
+  "schemaVersion": 1,
+  "status": "candidate-not-qualified",
+  "platform": "debian13-amd64",
+  "toolVersion": "25.03.0",
+  "debianVersion": "25.03.0-5+deb13u4",
+  "source": "https://packages.debian.org/trixie/poppler-utils",
+  "packages": [
+    {
+      "file": "dirmngr_2.4.7-21+deb13u1+b5_amd64.deb",
+      "package": "dirmngr",
+      "version": "2.4.7-21+deb13u1+b5",
+      "architecture": "amd64",
+      "bytes": 383892,
+      "sha256": "385b4689f43678dbd097ada002ec19733179777ac2a6c0229ae292cae17f0833",
+      "licenseFile": "usr/share/doc/dirmngr/copyright"
+    },
+    {
+      "file": "fontconfig-config_2.15.0-2.3_amd64.deb",
+      "package": "fontconfig-config",
+      "version": "2.15.0-2.3",
+      "architecture": "amd64",
+      "bytes": 318308,
+      "sha256": "0475c00d02660c07a15085051818625331bb502e053242106aaaa1f2ddb41225",
+      "licenseFile": "usr/share/doc/fontconfig-config/copyright"
+    },
+    {
+      "file": "fonts-dejavu-core_2.37-8_all.deb",
+      "package": "fonts-dejavu-core",
+      "version": "2.37-8",
+      "architecture": "all",
+      "bytes": 840460,
+      "sha256": "86635b3d25b3655fc11cb3ecc3af59f0bf19643b02b94f2de48bd10253cdba12",
+      "licenseFile": "usr/share/doc/fonts-dejavu-core/copyright"
+    },
+    {
+      "file": "fonts-dejavu-mono_2.37-8_all.deb",
+      "package": "fonts-dejavu-mono",
+      "version": "2.37-8",
+      "architecture": "all",
+      "bytes": 488808,
+      "sha256": "3003e98a5debfdeadc7040a7f715fe9fe6fb67f68deacf6049b54e30f07fc014",
+      "licenseFile": "usr/share/doc/fonts-dejavu-mono/copyright"
+    },
+    {
+      "file": "gnupg-l10n_2.4.7-21+deb13u1_all.deb",
+      "package": "gnupg-l10n",
+      "version": "2.4.7-21+deb13u1",
+      "architecture": "all",
+      "bytes": 748620,
+      "sha256": "65c0b5b06123f81f08cfa9b0be313cbc9cf6255c550d70eabd8b175ce8928a35",
+      "licenseFile": "usr/share/doc/gnupg-l10n/copyright"
+    },
+    {
+      "file": "gnupg_2.4.7-21+deb13u1_all.deb",
+      "package": "gnupg",
+      "version": "2.4.7-21+deb13u1",
+      "architecture": "all",
+      "bytes": 417112,
+      "sha256": "e68f0fd24a7a62f1112ae3e442564e134f21040492f11d1aefa7b18de93ebf6e",
+      "licenseFile": "usr/share/doc/gnupg/copyright"
+    },
+    {
+      "file": "gpg-agent_2.4.7-21+deb13u1+b5_amd64.deb",
+      "package": "gpg-agent",
+      "version": "2.4.7-21+deb13u1+b5",
+      "architecture": "amd64",
+      "bytes": 271000,
+      "sha256": "ebc440c05dd5c5ba35f0b0035d7653866ce26c47c826ffbb5a3440773f28da03",
+      "licenseFile": "usr/share/doc/gpg-agent/copyright"
+    },
+    {
+      "file": "gpg_2.4.7-21+deb13u1+b5_amd64.deb",
+      "package": "gpg",
+      "version": "2.4.7-21+deb13u1+b5",
+      "architecture": "amd64",
+      "bytes": 636212,
+      "sha256": "3aeedf3d223e5e6aff08f03227af6ce308f4317472609f383350fd2ec20d33ae",
+      "licenseFile": "usr/share/doc/gpg/copyright"
+    },
+    {
+      "file": "gpgconf_2.4.7-21+deb13u1+b5_amd64.deb",
+      "package": "gpgconf",
+      "version": "2.4.7-21+deb13u1+b5",
+      "architecture": "amd64",
+      "bytes": 128880,
+      "sha256": "14668f3f4847d2544bdff03c2ca8dbdd2fe0ad1bc7ded00941db291954c60f1b",
+      "licenseFile": "usr/share/doc/gpgconf/copyright"
+    },
+    {
+      "file": "gpgsm_2.4.7-21+deb13u1+b5_amd64.deb",
+      "package": "gpgsm",
+      "version": "2.4.7-21+deb13u1+b5",
+      "architecture": "amd64",
+      "bytes": 275832,
+      "sha256": "092f4675a1810ca7b51a1d53595f9e0c3ab65210c15805749e91030769e2301b",
+      "licenseFile": "usr/share/doc/gpgsm/copyright"
+    },
+    {
+      "file": "libassuan9_3.0.2-2_amd64.deb",
+      "package": "libassuan9",
+      "version": "3.0.2-2",
+      "architecture": "amd64",
+      "bytes": 61520,
+      "sha256": "9d78ef8f016e7f24b5e20d1ce91939fe0f1f897e5f9059793201e930ded7eb8e",
+      "licenseFile": "usr/share/doc/libassuan9/copyright"
+    },
+    {
+      "file": "libcairo2_1.18.4-1+b1_amd64.deb",
+      "package": "libcairo2",
+      "version": "1.18.4-1+b1",
+      "architecture": "amd64",
+      "bytes": 537556,
+      "sha256": "01390b049661e4cc8bd39cef78b41c2587d4035619d3b00d6c7846f43d80bbba",
+      "licenseFile": "usr/share/doc/libcairo2/copyright"
+    },
+    {
+      "file": "libdeflate0_1.23-2_amd64.deb",
+      "package": "libdeflate0",
+      "version": "1.23-2",
+      "architecture": "amd64",
+      "bytes": 47344,
+      "sha256": "5fe37fb79d53f5c91da6ba3ac4c1a8453e1f2b1ff0e0ea45189c5338bbfdbf82",
+      "licenseFile": "usr/share/doc/libdeflate0/copyright"
+    },
+    {
+      "file": "libfontconfig1_2.15.0-2.3_amd64.deb",
+      "package": "libfontconfig1",
+      "version": "2.15.0-2.3",
+      "architecture": "amd64",
+      "bytes": 391576,
+      "sha256": "7ae91ec59857cc8e375eb2bdd371a4a69daea38f7787d06d474a847867d852b1",
+      "licenseFile": "usr/share/doc/libfontconfig1/copyright"
+    },
+    {
+      "file": "libfreetype6_2.13.3+dfsg-1+deb13u1_amd64.deb",
+      "package": "libfreetype6",
+      "version": "2.13.3+dfsg-1+deb13u1",
+      "architecture": "amd64",
+      "bytes": 452308,
+      "sha256": "e4947f3291528f03d574f2b01d5c5fc45c58c47480f32888a5cdf0f231ab584e",
+      "licenseFile": "usr/share/doc/libfreetype6/copyright"
+    },
+    {
+      "file": "libgcrypt20_1.11.0-7+deb13u1_amd64.deb",
+      "package": "libgcrypt20",
+      "version": "1.11.0-7+deb13u1",
+      "architecture": "amd64",
+      "bytes": 843104,
+      "sha256": "f0eb41f8cb40896e0822e9ab65611e8383c12b721c76c54764f744abb4a8c247",
+      "licenseFile": "usr/share/doc/libgcrypt20/copyright"
+    },
+    {
+      "file": "libgpg-error0_1.51-4_amd64.deb",
+      "package": "libgpg-error0",
+      "version": "1.51-4",
+      "architecture": "amd64",
+      "bytes": 82108,
+      "sha256": "22b95570fd41c113ef6f5651563b4d748292844baab1278a46eb940c1dec2322",
+      "licenseFile": "usr/share/doc/libgpg-error0/copyright"
+    },
+    {
+      "file": "libgpgme11t64_1.24.2-3_amd64.deb",
+      "package": "libgpgme11t64",
+      "version": "1.24.2-3",
+      "architecture": "amd64",
+      "bytes": 345612,
+      "sha256": "6650203af59ccf73b22cd6904fb179a799cb70d62885b19ae725c0655c04241c",
+      "licenseFile": "usr/share/doc/libgpgme11t64/copyright"
+    },
+    {
+      "file": "libgpgmepp6t64_1.24.2-3_amd64.deb",
+      "package": "libgpgmepp6t64",
+      "version": "1.24.2-3",
+      "architecture": "amd64",
+      "bytes": 340548,
+      "sha256": "81860c69f1480af6969de16845e2091dba9fca1e33732411e28437ea62e1a625",
+      "licenseFile": "usr/share/doc/libgpgmepp6t64/copyright"
+    },
+    {
+      "file": "libjbig0_2.1-6.1+b2_amd64.deb",
+      "package": "libjbig0",
+      "version": "2.1-6.1+b2",
+      "architecture": "amd64",
+      "bytes": 32116,
+      "sha256": "95cbc44561651e1b3385454df08e8f2efe84498f6963a85259be2cc2fe798709",
+      "licenseFile": "usr/share/doc/libjbig0/copyright"
+    },
+    {
+      "file": "libjpeg62-turbo_1%3a2.1.5-4_amd64.deb",
+      "package": "libjpeg62-turbo",
+      "version": "1:2.1.5-4",
+      "architecture": "amd64",
+      "bytes": 168152,
+      "sha256": "5504299ad0e3c0a9ca9f962a68a650a040db52f9f416a109e74df48d55601d3f",
+      "licenseFile": "usr/share/doc/libjpeg62-turbo/copyright"
+    },
+    {
+      "file": "libksba8_1.6.7-2+b1_amd64.deb",
+      "package": "libksba8",
+      "version": "1.6.7-2+b1",
+      "architecture": "amd64",
+      "bytes": 136048,
+      "sha256": "45bc1bfaf41a5e1136b1c1f58c495a950888da33a617de24202f3568e45b9572",
+      "licenseFile": "usr/share/doc/libksba8/copyright"
+    },
+    {
+      "file": "liblcms2-2_2.16-2+deb13u2_amd64.deb",
+      "package": "liblcms2-2",
+      "version": "2.16-2+deb13u2",
+      "architecture": "amd64",
+      "bytes": 160264,
+      "sha256": "32e53c2002ccea8c60c02779bea0ba49ac132fef702988a30d64af79b6617806",
+      "licenseFile": "usr/share/doc/liblcms2-2/copyright"
+    },
+    {
+      "file": "liblerc4_4.0.0+ds-5_amd64.deb",
+      "package": "liblerc4",
+      "version": "4.0.0+ds-5",
+      "architecture": "amd64",
+      "bytes": 182976,
+      "sha256": "2e0c13c0ddbde12968c2c713c2e0474a5b78e90d5216031256a725e8c76aa31c",
+      "licenseFile": "usr/share/doc/liblerc4/copyright"
+    },
+    {
+      "file": "libnpth0t64_1.8-3_amd64.deb",
+      "package": "libnpth0t64",
+      "version": "1.8-3",
+      "architecture": "amd64",
+      "bytes": 23248,
+      "sha256": "37d489976ef91ca0165a7789a7a7ac5923ee3cfadf316ac3e87582e15d0523d7",
+      "licenseFile": "usr/share/doc/libnpth0t64/copyright"
+    },
+    {
+      "file": "libnspr4_2%3a4.36-1_amd64.deb",
+      "package": "libnspr4",
+      "version": "2:4.36-1",
+      "architecture": "amd64",
+      "bytes": 109800,
+      "sha256": "87fc2039ee89cff2b8010fa9535706b1def40031acfc52bf12197dcb3cb7b064",
+      "licenseFile": "usr/share/doc/libnspr4/copyright"
+    },
+    {
+      "file": "libnss3_2%3a3.110-1+deb13u4_amd64.deb",
+      "package": "libnss3",
+      "version": "2:3.110-1+deb13u4",
+      "architecture": "amd64",
+      "bytes": 1394236,
+      "sha256": "8d20d0754039e15e9bd2c8484e98dc9c2982907d4f20834da29a9501913d00b5",
+      "licenseFile": "usr/share/doc/libnss3/copyright"
+    },
+    {
+      "file": "libopenjp2-7_2.5.3-2.1~deb13u2_amd64.deb",
+      "package": "libopenjp2-7",
+      "version": "2.5.3-2.1~deb13u2",
+      "architecture": "amd64",
+      "bytes": 204616,
+      "sha256": "7ddf6360e8845853ba3c9cfaefc2ad6b92b2627eb8564a257f5f2a4c857f8748",
+      "licenseFile": "usr/share/doc/libopenjp2-7/copyright"
+    },
+    {
+      "file": "libpixman-1-0_0.44.0-3_amd64.deb",
+      "package": "libpixman-1-0",
+      "version": "0.44.0-3",
+      "architecture": "amd64",
+      "bytes": 247888,
+      "sha256": "3862c87596f6b4b60fc916395fd69aa10af28a875a8e5c081a8cf30ddd120bd6",
+      "licenseFile": "usr/share/doc/libpixman-1-0/copyright"
+    },
+    {
+      "file": "libpng16-16t64_1.6.48-1+deb13u6_amd64.deb",
+      "package": "libpng16-16t64",
+      "version": "1.6.48-1+deb13u6",
+      "architecture": "amd64",
+      "bytes": 283368,
+      "sha256": "0f8034d1c2547760430c81e8d87e5d6acd533a3493c80cf76dbecd0343b6773c",
+      "licenseFile": "usr/share/doc/libpng16-16t64/copyright"
+    },
+    {
+      "file": "libpoppler147_25.03.0-5+deb13u4_amd64.deb",
+      "package": "libpoppler147",
+      "version": "25.03.0-5+deb13u4",
+      "architecture": "amd64",
+      "bytes": 2036064,
+      "sha256": "2466115f6d92266415f53c5fb88348d980710880bae888d96d6e3cc3a0a1ed3b",
+      "licenseFile": "usr/share/doc/libpoppler147/copyright"
+    },
+    {
+      "file": "libsharpyuv0_1.5.0-0.1_amd64.deb",
+      "package": "libsharpyuv0",
+      "version": "1.5.0-0.1",
+      "architecture": "amd64",
+      "bytes": 115612,
+      "sha256": "51934833d909588f7761fd84362114e90d8d2d38af57edf5df5c4a705e037547",
+      "licenseFile": "usr/share/doc/libsharpyuv0/copyright"
+    },
+    {
+      "file": "libtiff6_4.7.0-3+deb13u3_amd64.deb",
+      "package": "libtiff6",
+      "version": "4.7.0-3+deb13u3",
+      "architecture": "amd64",
+      "bytes": 345492,
+      "sha256": "6bb2038f36817ae1ee6d33df03917b21835dcc2e0f3e3e80a71390e83c171173",
+      "licenseFile": "usr/share/doc/libtiff6/copyright"
+    },
+    {
+      "file": "libwebp7_1.5.0-0.1_amd64.deb",
+      "package": "libwebp7",
+      "version": "1.5.0-0.1",
+      "architecture": "amd64",
+      "bytes": 317856,
+      "sha256": "c749744b04abdd1426b0c7718e516362c03a557c5151662092d6d4f2cef6e7c1",
+      "licenseFile": "usr/share/doc/libwebp7/copyright"
+    },
+    {
+      "file": "libx11-6_2%3a1.8.12-1_amd64.deb",
+      "package": "libx11-6",
+      "version": "2:1.8.12-1",
+      "architecture": "amd64",
+      "bytes": 815292,
+      "sha256": "b5a3fd3bf8c8fd0364bfb9bea00dcba7fc301229bd02dded084632d31f5b0fb3",
+      "licenseFile": "usr/share/doc/libx11-6/copyright"
+    },
+    {
+      "file": "libx11-data_2%3a1.8.12-1_all.deb",
+      "package": "libx11-data",
+      "version": "2:1.8.12-1",
+      "architecture": "all",
+      "bytes": 343072,
+      "sha256": "c54f87069888f80ba4da586da6147d74c7598ccdd8b90906dbc4271fa414c738",
+      "licenseFile": "usr/share/doc/libx11-data/copyright"
+    },
+    {
+      "file": "libxau6_1%3a1.0.11-1_amd64.deb",
+      "package": "libxau6",
+      "version": "1:1.0.11-1",
+      "architecture": "amd64",
+      "bytes": 20392,
+      "sha256": "689a9f0e0ba3e2c65431f864871e303ee904de69dd28abfc462663fae030227f",
+      "licenseFile": "usr/share/doc/libxau6/copyright"
+    },
+    {
+      "file": "libxcb-render0_1.17.0-2+b1_amd64.deb",
+      "package": "libxcb-render0",
+      "version": "1.17.0-2+b1",
+      "architecture": "amd64",
+      "bytes": 115100,
+      "sha256": "7f6e36978e0f70a590fbad4042a692c70b50ca7cbcdc53fa7e9d9ab87933acc6",
+      "licenseFile": "usr/share/doc/libxcb-render0/copyright"
+    },
+    {
+      "file": "libxcb-shm0_1.17.0-2+b1_amd64.deb",
+      "package": "libxcb-shm0",
+      "version": "1.17.0-2+b1",
+      "architecture": "amd64",
+      "bytes": 105284,
+      "sha256": "d1777a813f484e89f3dcaadd1d5f2b1a13e9313b6bf70eded16d8ce743208fef",
+      "licenseFile": "usr/share/doc/libxcb-shm0/copyright"
+    },
+    {
+      "file": "libxcb1_1.17.0-2+b1_amd64.deb",
+      "package": "libxcb1",
+      "version": "1.17.0-2+b1",
+      "architecture": "amd64",
+      "bytes": 144340,
+      "sha256": "5c222a72d11b866447da31693254f738430726e3e065a384e82687b2fd2f978b",
+      "licenseFile": "usr/share/doc/libxcb1/copyright"
+    },
+    {
+      "file": "libxdmcp6_1%3a1.1.5-1_amd64.deb",
+      "package": "libxdmcp6",
+      "version": "1:1.1.5-1",
+      "architecture": "amd64",
+      "bytes": 27756,
+      "sha256": "0740dc760916b2008b45417a42a8fd7dd5de370fb57d31373f15034cda8acf0b",
+      "licenseFile": "usr/share/doc/libxdmcp6/copyright"
+    },
+    {
+      "file": "libxext6_2%3a1.3.4-1+b3_amd64.deb",
+      "package": "libxext6",
+      "version": "2:1.3.4-1+b3",
+      "architecture": "amd64",
+      "bytes": 50448,
+      "sha256": "fc618ec40465e5ce48622606299cb47833efc3fb235ba15543b81f850722f443",
+      "licenseFile": "usr/share/doc/libxext6/copyright"
+    },
+    {
+      "file": "libxrender1_1%3a0.9.12-1_amd64.deb",
+      "package": "libxrender1",
+      "version": "1:0.9.12-1",
+      "architecture": "amd64",
+      "bytes": 27896,
+      "sha256": "9d042dfd5e613be1e02e6ddd0c5c4adef19c5eb08f6db838c2eba672c496dca4",
+      "licenseFile": "usr/share/doc/libxrender1/copyright"
+    },
+    {
+      "file": "pinentry-curses_1.3.1-2_amd64.deb",
+      "package": "pinentry-curses",
+      "version": "1.3.1-2",
+      "architecture": "amd64",
+      "bytes": 86388,
+      "sha256": "aed82cd9cc92b8a37f1332f951737f549595a3126aa609e632f9205d95405efc",
+      "licenseFile": "usr/share/doc/pinentry-curses/copyright"
+    },
+    {
+      "file": "poppler-utils_25.03.0-5+deb13u4_amd64.deb",
+      "package": "poppler-utils",
+      "version": "25.03.0-5+deb13u4",
+      "architecture": "amd64",
+      "bytes": 213460,
+      "sha256": "7b5bb3607e7fa078e002420d4e5129d7b83c5684ca6f88d229a40af3e76a7b02",
+      "licenseFile": "usr/share/doc/poppler-utils/copyright"
+    }
+  ]
+}
