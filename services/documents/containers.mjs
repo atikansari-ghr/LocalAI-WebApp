@@ -55,8 +55,9 @@ async function readArchive(input,state,depth){
    if(size>state.policy.maxEntryBytes)fail('archive_entry_size_limit');if(state.expanded+size>state.policy.maxExpandedBytes)fail('archive_expanded_limit');
    if(size>0&&(!compressed||size/compressed>state.policy.maxCompressionRatio))fail('archive_compression_ratio');
    if(directory&&(size||compressed))fail('archive_invalid_directory');
-   const extension=path.path.slice(path.path.lastIndexOf('.')+1).toLowerCase();if(!directory&&(EXECUTABLES.has(extension)||!(DOCUMENTS.has(extension)||(state.office&&extension==='rels'))))fail('archive_entry_format_unsupported');
+   const extension=path.path.slice(path.path.lastIndexOf('.')+1).toLowerCase();if(!directory&&(EXECUTABLES.has(extension)||!(DOCUMENTS.has(extension)||(state.office&&extension==='rels')||(state.office==='odf'&&path.path==='mimetype'))))fail('archive_entry_format_unsupported');
    const local=await zip.readLocalFileHeaderPromise(entry);state.check();
+   if(state.office==='odf'&&path.path==='mimetype'&&(entry.relativeOffsetOfLocalHeader!==0||entry.compressionMethod!==0||local.extraFieldLength!==0||local.fileNameLength!==8))fail('opendocument_mimetype_invalid');
    const localName=yauzl.getFileNameLowLevel(local.generalPurposeBitFlag,local.fileName,entry.extraFields,true);
    if(localName!==entry.fileName||local.generalPurposeBitFlag!==entry.generalPurposeBitFlag||local.compressionMethod!==entry.compressionMethod)fail('archive_header_mismatch');
    const descriptor=Boolean(entry.generalPurposeBitFlag&8);
@@ -97,3 +98,4 @@ async function readContainer(input,options={},office=false){
 
 export function readZipDocument(input,options={}){return readContainer(input,options);}
 export function readOfficeZipDocument(input,options={}){return readContainer(input,options,true);}
+export function readOpenDocumentZip(input,options={}){return readContainer(input,options,'odf');}
