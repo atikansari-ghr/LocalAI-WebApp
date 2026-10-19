@@ -1,0 +1,7 @@
+# Phase 4 private worker protocol checkpoint — 2026-10-19
+
+The inactive document worker candidate now has a bounded length-prefixed JSON protocol over a local socket. Requests contain one operation, normalized upload identity and base64 content capped at 10 MiB; responses have a 4 MiB frame cap. Names cannot contain paths, controls or separators, and base64 must be canonical. The gateway-side call has a deadline and cancellation signal. A disconnected client aborts processing.
+
+Review reproduced two crash/hang conditions: cancellation before socket connection left the caller pending, and a disconnected peer could trigger an unhandled `EPIPE` while the worker tried to reply. Regression tests failed on both and passed after explicit connection-close settlement, persistent socket-error handling and disconnected-write checks. A further review reproduced an unhandled rejection when a processor threw `null`; safe error inspection now returns a bounded generic error. Focused Windows tests pass 6/6. The same six tests pass in a transient Debian `DynamicUser` unit with private network, devices and temporary directory, protected filesystem/home, 256 MiB memory cap and zero swap; observed peak was 39.1 MiB.
+
+This protocol is not wired into the live gateway or a native worker service. Native supervisor lifecycle, authenticated API routes, coordinated update/rollback, full resource qualification and the Phase 4 release gate remain pending. The enrolled account and live services were not changed for this checkpoint.
