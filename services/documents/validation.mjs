@@ -6,7 +6,7 @@ export const DOCUMENT_LIMITS=Object.freeze({maxFileBytes:10*1024**2,maxTextBytes
 const formats={
  txt:['text/plain','text'],md:['text/markdown','text','text/plain'],markdown:['text/markdown','text','text/plain'],
  json:['application/json','text'],csv:['text/csv','text','application/csv'],ics:['text/calendar','text'],
- html:['text/html','text'],htm:['text/html','text'],xml:['application/xml','text','text/xml'],eml:['message/rfc822','text'],
+ html:['text/html','text'],htm:['text/html','text'],xml:['application/xml','text','text/xml'],eml:['message/rfc822','mail'],
  pdf:['application/pdf','pdf'],rtf:['application/rtf','rtf','text/rtf'],
  png:['image/png','png'],jpg:['image/jpeg','jpeg'],jpeg:['image/jpeg','jpeg'],webp:['image/webp','webp'],tif:['image/tiff','tiff'],tiff:['image/tiff','tiff'],
  docx:['application/vnd.openxmlformats-officedocument.wordprocessingml.document','zip'],xlsx:['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','zip'],pptx:['application/vnd.openxmlformats-officedocument.presentationml.presentation','zip'],
@@ -45,6 +45,7 @@ export function inspectDocument(input,limits={}){
  if(input.bytes.byteLength>policy.maxFileBytes||(kind==='text'&&input.bytes.byteLength>policy.maxTextBytes))fail('document_too_large');
  const bytes=Buffer.from(input.bytes),detected=binaryKind(bytes);
  if(kind==='text'){if(detected)fail('magic_mismatch');decodeDocumentUtf8(bytes);}
+ else if(kind==='mail'){if(detected||bytes.includes(0))fail('invalid_email');}
  else if(detected!==kind)fail('magic_mismatch');
  return Object.freeze({name,format:({markdown:'md',htm:'html',jpg:'jpeg',tif:'tiff'})[extension]??extension,kind,mediaType,size:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex'),structure:kind==='zip'||kind==='ole'?'requires-container-validation':'requires-parser-validation'});
 }
