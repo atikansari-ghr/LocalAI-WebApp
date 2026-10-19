@@ -77,6 +77,10 @@ export function openVault(path) {
       const decipher=createDecipheriv('aes-256-gcm',key,nonce);decipher.setAAD(Buffer.from(purpose));decipher.setAuthTag(tag);
       return Buffer.concat([decipher.update(Buffer.from(parts[2],'base64url')),decipher.final()]).toString('utf8');
     },
-    csrf(token){return createHmac('sha256',key).update('csrf:'+token).digest('base64url');}
+    csrf(token){return createHmac('sha256',key).update('csrf:'+token).digest('base64url');},
+    digest(value,purpose){
+      if(typeof value!=='string'||typeof purpose!=='string'||!purpose||purpose.length>128)throw new TypeError('Vault digest value and purpose required');
+      return createHmac('sha256',key).update('digest-v1:'+purpose+':').update(value).digest('hex');
+    }
   };
 }
