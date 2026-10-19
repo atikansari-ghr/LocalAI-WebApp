@@ -20,7 +20,7 @@ test('Document jobs persist encrypted input and completed results across reopen 
   const job=store.enqueue(submission({name:'Private notes.txt',bytes:Buffer.from('PRIVATE DOCUMENT BODY')}));
   assert.equal(job.status,'queued');assert.equal(store.get(job.id,'app:two','private'),null);assert.equal(store.get(job.id,'app:one','other'),null);
   const claim=store.claim();assert.equal(claim.id,job.id);assert.equal(claim.name,'Private notes.txt');assert.equal(claim.bytes.toString(),'PRIVATE DOCUMENT BODY');
-  store.complete(job.id,claim.token,{text:'PRIVATE EXTRACTED TEXT'});store.close();
+  store.complete(job.id,claim.token,{text:'PRIVATE EXTRACTED TEXT'},{nativeCleanupConfirmed:true});store.close();
   const raw=Buffer.concat(readdirSync(f.dir).filter(name=>name.startsWith('jobs.sqlite')).map(name=>readFileSync(join(f.dir,name)))).toString('utf8');
   for(const secret of ['PRIVATE DOCUMENT BODY','Private notes.txt','PRIVATE EXTRACTED TEXT'])assert.equal(raw.includes(secret),false);
   const reopened=openDocumentJobStore(f.path,{vault:openVault(join(f.dir,'master.key')),now:()=>1001});
@@ -32,7 +32,7 @@ test('A restart does not reclaim an active job until native cleanup is explicitl
  store.close();const reopened=openDocumentJobStore(f.path,{vault:f.vault,now:()=>1001});assert.equal(reopened.claim(),null);
  assert.throws(()=>reopened.recoverInterrupted({nativeCleanupConfirmed:false}),/native_cleanup_required/);
  assert.equal(reopened.recoverInterrupted({nativeCleanupConfirmed:true}),1);assert.equal(reopened.get(first.id,'user:one','private').status,'failed');
- assert.throws(()=>reopened.complete(first.id,claim.token,{text:'late'}),/job_claim_invalid/);reopened.close();
+ assert.throws(()=>reopened.complete(first.id,claim.token,{text:'late'},{nativeCleanupConfirmed:true}),/job_claim_invalid/);reopened.close();
 });
 test('Document job claims, cancellation, expiry and result caps fail closed',t=>{
  const f=fixture(t);let now=1000;const store=openDocumentJobStore(f.path,{vault:f.vault,now:()=>now});
@@ -42,9 +42,9 @@ test('Document job claims, cancellation, expiry and result caps fail closed',t=>
  assert.throws(()=>store.complete(job.id,'wrong',{text:'x'}),/job_claim_invalid/);
  assert.equal(store.cancel(job.id,'app:one','private'),true);
  assert.equal(store.get(job.id,'app:one','private').status,'cancelling');
- assert.throws(()=>store.complete(job.id,claim.token,{text:'late'}),/job_claim_invalid/);
+ assert.throws(()=>store.complete(job.id,claim.token,{text:'late'},{nativeCleanupConfirmed:true}),/job_claim_invalid/);
  now=5001;assert.equal(store.purgeExpired(),0);assert.equal(store.get(job.id,'app:one','private').status,'cancelling');
- store.finishCancellation(job.id,claim.token);assert.equal(store.get(job.id,'app:one','private').status,'cancelled');
+ store.finishCancellation(job.id,claim.token,{nativeCleanupConfirmed:true});assert.equal(store.get(job.id,'app:one','private').status,'cancelled');
  assert.equal(store.purgeExpired(),1);assert.equal(store.get(job.id,'app:one','private'),null);store.close();
 });
 test('An existing unversioned database cannot be relabelled as a job store',t=>{
@@ -63,8 +63,8 @@ test('Wrong vault material and oversized results cannot silently replace persist
  const other=initializeVault(join(f.dir,'other.key'),{encryptedStateExists:false}),wrong=openDocumentJobStore(f.path,{vault:other,now:()=>1001});
  assert.throws(()=>wrong.claim());wrong.close();
  const reopened=openDocumentJobStore(f.path,{vault:f.vault,now:()=>1001}),claim=reopened.claim();assert.equal(claim.id,job.id);
- assert.throws(()=>reopened.complete(job.id,claim.token,{text:'x'.repeat(4*1024**2)}),/job_result_too_large/);
- assert.equal(reopened.get(job.id,'user:one','private').status,'running');reopened.complete(job.id,claim.token,{text:'safe'});reopened.close();
+ assert.throws(()=>reopened.complete(job.id,claim.token,{text:'x'.repeat(4*1024**2)},{nativeCleanupConfirmed:true}),/job_result_too_large/);
+ assert.equal(reopened.get(job.id,'user:one','private').status,'running');reopened.complete(job.id,claim.token,{text:'safe'},{nativeCleanupConfirmed:true});reopened.close();
 });
 test('Idempotency is bound to namespace, scope, operation and exact request bytes across restart',t=>{
  const f=fixture(t),store=openDocumentJobStore(f.path,{vault:f.vault,now:()=>1000}),first=store.enqueue(submission());
@@ -80,7 +80,7 @@ test('An expired idempotency key can be reused only after its prior job is inact
  const f=fixture(t);let now=1000;const store=openDocumentJobStore(f.path,{vault:f.vault,now:()=>now}),old=store.enqueue(submission());
  now=5001;assert.notEqual(store.enqueue(submission({expiresAt:9000})).id,old.id);
  const claim=store.claim();now=9001;assert.throws(()=>store.enqueue(submission({expiresAt:13000})),/job_in_progress_cleanup/);
- store.cancel(claim.id,'app:one','private');store.finishCancellation(claim.id,claim.token);
+ store.cancel(claim.id,'app:one','private');store.finishCancellation(claim.id,claim.token,{nativeCleanupConfirmed:true});
  assert.notEqual(store.enqueue(submission({expiresAt:13000})).id,claim.id);store.close();
 });
 test('Database fingerprints do not permit offline guesses of document bytes or idempotency keys',t=>{
@@ -90,4 +90,17 @@ test('Database fingerprints do not permit offline guesses of document bytes or i
  const guessedNo=createHash('sha256').update(JSON.stringify({name:input.name,mime:input.mime,options:{ocr:'auto',language:'auto'}})).update(Buffer.from('family answer NO')).digest('hex');
  assert.notEqual(row.request_hash,guessedYes);assert.notEqual(row.request_hash,guessedNo);
  assert.notEqual(row.idempotency_hash,createHash('sha256').update(input.idempotencyKey).digest('hex'));
+});
+test('A claim cannot finalize before native worker cleanup is confirmed',t=>{
+ const f=fixture(t),store=openDocumentJobStore(f.path,{vault:f.vault,now:()=>1000});
+ const first=store.enqueue(submission()),claim=store.claim();
+ assert.throws(()=>store.complete(first.id,claim.token,{text:'unsafe'}),/native_cleanup_required/);
+ assert.equal(store.get(first.id,'app:one','private').status,'running');
+ store.complete(first.id,claim.token,{text:'safe'},{nativeCleanupConfirmed:true});
+ const second=store.enqueue(submission({idempotencyKey:'another_key_12345'})),cancelClaim=store.claim();
+ store.cancel(second.id,'app:one','private');
+ assert.throws(()=>store.finishCancellation(second.id,cancelClaim.token),/native_cleanup_required/);
+ assert.equal(store.get(second.id,'app:one','private').status,'cancelling');
+ store.finishCancellation(second.id,cancelClaim.token,{nativeCleanupConfirmed:true});
+ assert.equal(store.get(second.id,'app:one','private').status,'cancelled');store.close();
 });

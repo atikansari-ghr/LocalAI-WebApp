@@ -70,15 +70,16 @@ export function openDocumentJobStore(path,{vault,now=Date.now}={}){
    db.prepare("UPDATE document_jobs SET status='running',claim_hash=?,updated_at=? WHERE id=? AND status='queued'").run(hash,at,row.id);
    return Object.freeze({id:row.id,namespace:row.namespace,scope:row.scope,kind:row.kind,name:payload.name,mime:payload.mime,options:payload.options,bytes:Buffer.from(payload.bytes,'base64'),token});
   });},
-  complete(id,token,result){
+  complete(id,token,result,{nativeCleanupConfirmed}={}){
    if(typeof token!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(token))throw invalid('job_claim_invalid');
+   if(nativeCleanupConfirmed!==true)throw invalid('native_cleanup_required');
    const encoded=Buffer.from(JSON.stringify(result??null));if(encoded.length>MAX_RESULT)throw invalid('job_result_too_large');
    return transaction(()=>{const hash=createHash('sha256').update(token).digest('hex'),row=db.prepare("SELECT * FROM document_jobs WHERE id=? AND status='running' AND claim_hash=?").get(id,hash);if(!row)throw invalid('job_claim_invalid');
     const sealed=encrypt(keyFor(row),id,'result',encoded),change=db.prepare("UPDATE document_jobs SET status='complete',claim_hash=NULL,result_nonce=?,result_body=?,result_tag=?,updated_at=? WHERE id=? AND status='running' AND claim_hash=?").run(sealed.nonce,sealed.body,sealed.tag,now(),id,hash);if(change.changes!==1)throw invalid('job_claim_invalid');return visible(select.get(id,row.namespace,row.scope));});
   },
   result(id,namespace,scope){if(!validNamespace(namespace)||!validScope(scope))return null;const row=select.get(id,namespace,scope);if(!row||row.status!=='complete')return null;return JSON.parse(decrypt(keyFor(row),id,'result',row.result_nonce,row.result_body,row.result_tag).toString('utf8'));},
   cancel(id,namespace,scope){if(!validNamespace(namespace)||!validScope(scope))return false;return db.prepare("UPDATE document_jobs SET status=CASE status WHEN 'running' THEN 'cancelling' ELSE 'cancelled' END,updated_at=? WHERE id=? AND namespace=? AND scope=? AND status IN ('queued','running')").run(now(),id,namespace,scope).changes===1;},
-  finishCancellation(id,token){if(typeof token!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(token))throw invalid('job_claim_invalid');const hash=createHash('sha256').update(token).digest('hex');if(db.prepare("UPDATE document_jobs SET status='cancelled',claim_hash=NULL,updated_at=? WHERE id=? AND claim_hash=? AND status='cancelling'").run(now(),id,hash).changes!==1)throw invalid('job_claim_invalid');},
+  finishCancellation(id,token,{nativeCleanupConfirmed}={}){if(typeof token!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(token))throw invalid('job_claim_invalid');if(nativeCleanupConfirmed!==true)throw invalid('native_cleanup_required');const hash=createHash('sha256').update(token).digest('hex');if(db.prepare("UPDATE document_jobs SET status='cancelled',claim_hash=NULL,updated_at=? WHERE id=? AND claim_hash=? AND status='cancelling'").run(now(),id,hash).changes!==1)throw invalid('job_claim_invalid');},
   recoverInterrupted({nativeCleanupConfirmed}={}){if(nativeCleanupConfirmed!==true)throw invalid('native_cleanup_required');return db.prepare("UPDATE document_jobs SET status=CASE status WHEN 'cancelling' THEN 'cancelled' ELSE 'failed' END,claim_hash=NULL,error_code=CASE status WHEN 'running' THEN 'interrupted_after_restart' ELSE NULL END,updated_at=? WHERE status IN ('running','cancelling')").run(now()).changes;},
   purgeExpired(){return db.prepare("DELETE FROM document_jobs WHERE expires_at<=? AND status NOT IN ('running','cancelling')").run(now()).changes;},
   close(){db.close();}
