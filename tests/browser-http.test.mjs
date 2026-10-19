@@ -55,6 +55,12 @@ test('unified AI routes enforce application capability IP policy and browser CSR
  assert.equal((await f.request('/v1/models',{headers})).response.status,403);
  assert.equal((await f.request('/v1/models',{headers:{cookie:''}})).response.status,401);
 });
+test('draft document operations remain unavailable before their worker and release gates',async t=>{
+ const f=await fixture(t,'127.0.0.1',{chat:async()=>({choices:[]}),embeddings:async()=>({data:[]})});
+ for(const [method,path] of [['POST','/v1/ocr'],['POST','/v1/extract'],['GET','/v1/documents/00000000-0000-4000-8000-000000000000/status'],['DELETE','/v1/documents/00000000-0000-4000-8000-000000000000']]){
+  assert.equal((await f.request(path,{method,body:method==='POST'?{}:undefined})).response.status,404);
+ }
+});
 test('browser setup requires proxy TLS origin and CSRF and issues secure session cookies',async t=>{
  const f=await fixture(t);
  assert.equal((await f.request('/auth/bootstrap',{headers:{'x-forwarded-proto':'http'}})).response.status,403);
