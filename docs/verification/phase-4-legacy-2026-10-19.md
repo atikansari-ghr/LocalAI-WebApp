@@ -9,3 +9,5 @@ Actual Debian DynamicUser unit localai-legacy-html-proof: success,773ms, memory.
 Failed candidates preserved: unrtf plain output replaces Arabic with question marks; selected HTML conversion produces Unicode entities and correct literal Arabic. Python extract-msg0.56.1 wheel-only resolution failed red-black-tree-mod availability; no source build or package installation was attempted. MSG exact-buffer and binary HTML bugs were reproduced and fixed before exposure.
 
 Archive identities are committed in services/documents/legacy-packages.json; vendor copyright files were inspected. Host dpkg status checksum remains unchanged. Live localai.service remains active PID19963/NRestarts0 at phase3 source3bbe66c. Whole phase4 gate remains blocked pending shared isolated dispatch/admission, adaptive OCR, authorized contracts and coordinated update/recovery qualification.
+
+Source f9baff7 complete actual Debian suite:169/169 passed,0 skipped/failed. Both required GitHub CI jobs passed on that exact source. The local command path quoting mistake was corrected before tests; no gate was bypassed.
