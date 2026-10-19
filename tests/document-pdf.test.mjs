@@ -11,3 +11,7 @@ test('PDF native output decoding rejects encryption scripts DTD substitution inv
  for(const altered of [{...input(),info:'Pages: 3\nEncrypted: yes\n'},{...input(),info:'Pages: 3\nEncrypted: no\nJavaScript: yes\n'},input(fixture.replace('http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd','https://example.com/entity')),input(fixture.replace('xMin="54.000000" yMin="41.076000" xMax="113.022000"','xMin="99999" yMin="41.076000" xMax="113.022000"'))])assert.throws(()=>decodePopplerOutput(altered,document));
  assert.throws(()=>decodePopplerOutput(input(),document,{maxTextBytes:3}),/text_output_limit/);assert.throws(()=>decodePopplerOutput({...input(),info:'Pages: 1000000\nEncrypted: no\n'},document),/pdf_page_limit/);
 });
+
+test('PDF auto raster selection excludes native text pages while all preserves explicit full rendering',async()=>{
+ const {selectPdfRasterPages}=await import('../services/documents/pdf.mjs'),pages=decodePopplerOutput(input(),document).pages;assert.deepEqual(selectPdfRasterPages(pages,'needed').map(p=>p.index),[2,3]);assert.deepEqual(selectPdfRasterPages(pages,true).map(p=>p.index),[1,2,3]);assert.deepEqual(selectPdfRasterPages(pages,false),[]);assert.throws(()=>selectPdfRasterPages(pages,'invalid'),/invalid_pdf_options/);
+});

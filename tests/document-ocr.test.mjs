@@ -34,3 +34,11 @@ test('OCR reports an actionable language prerequisite instead of inventing a ter
 test('OCR preserves bounded timeout evidence and handles non-Error adapter failures safely',async()=>{
  for(const failure of [null,Object.assign(new Error(),{code:'document_tool_timeout'})]){const result=await createOcrChain({adapters:{'light-ocr':async()=>{throw failure;}},mode:'primary-only'})([page]);assert.equal(result.pages[0].attempts[0].error,failure===null?'ocr_engine_failed':'document_tool_timeout');}
 });
+
+test('OCR auto checks secondary script coverage and uses observed Arabic for tertiary model selection',async()=>{
+ const calls=[],chain=createOcrChain({adapters:{'light-ocr':async()=>{calls.push('light');return output('NATIVE HEADER');},tesseract:async()=>{calls.push('tess');return output('NATIVE HEADER مرحبا بالعالم');},paddleocr:async(_page,options)=>{calls.push(options.language);return output('NATIVE HEADER مرحبا بالعالم');}}});const result=await chain([page]);assert.deepEqual(calls,['light','tess','ar']);assert.equal(result.pages[0].engine,'paddleocr');assert.equal(result.pages[0].conflict,true);assert.match(result.pages[0].text,/مرحبا/);
+});
+
+test('OCR automatic agreement ignores harmless whitespace and does not replace corroborated text',async()=>{
+ const called=[],result=await createOcrChain({adapters:{'light-ocr':async()=>output('LOCAL AI'),tesseract:async()=>output('LOCAL\nAI'),paddleocr:async()=>{called.push('paddle');return output('WRONG BODY');}}})([page]);assert.deepEqual(called,[]);assert.equal(result.pages[0].conflict,false);
+});

@@ -21,7 +21,7 @@ with contextlib.redirect_stdout(sys.stderr):
         width,height=picture.size
         assert picture.format=='PNG' and 0<width<=2000 and 0<height<=2000
     model='en_PP-OCRv5_mobile_rec' if language=='en' else 'arabic_PP-OCRv5_mobile_rec'
-    engine=PaddleOCR(text_detection_model_name='PP-OCRv5_mobile_det',text_detection_model_dir=str(base/'models'/'PP-OCRv5_mobile_det'),text_recognition_model_name=model,text_recognition_model_dir=str(base/'models'/model),use_doc_orientation_classify=False,use_doc_unwarping=False,use_textline_orientation=False,device='cpu',cpu_threads=1,enable_mkldnn=False,text_recognition_batch_size=1)
+    engine=PaddleOCR(text_detection_model_name='PP-OCRv5_mobile_det',text_detection_model_dir=str(base/'models'/'PP-OCRv5_mobile_det'),text_recognition_model_name=model,text_recognition_model_dir=str(base/'models'/model),use_doc_orientation_classify=False,use_doc_unwarping=False,use_textline_orientation=False,device='cpu',cpu_threads=1,enable_mkldnn=False,text_recognition_batch_size=1,text_det_limit_side_len=736,text_det_limit_type="max")
     pages=list(engine.predict(str(image)))
     assert len(pages)==1
     page=pages[0]

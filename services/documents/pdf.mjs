@@ -40,11 +40,12 @@ export function decodePopplerOutput(input,document,options={}){
  try{parser.write(xml).close();}catch(error){if(error instanceof DocumentError)throw error;fail('invalid_pdf_layout');}if(pages.length!==count||current||word)fail('invalid_pdf_layout');
  return Object.freeze({pages:Object.freeze(pages),warnings:Object.freeze(['pdf_native_word_spacing_reconstructed','pdf_embedded_files_annotations_and_links_not_extracted','pdf_bitmap_inventory_does_not_classify_vector_content'])});
 }
+export function selectPdfRasterPages(pages,mode=false){if(![true,false,'needed'].includes(mode))fail('invalid_pdf_options');return mode===false?[]:mode==='needed'?pages.filter(page=>page.status!=='native-text'):pages;}
 export function createPdfParser(config){
  if(!config||Object.keys(config).some(k=>!['binDir','libraryDir','fontConfig','tempRoot'].includes(k))||['binDir','libraryDir','fontConfig'].some(k=>typeof config[k]!=='string'||!isAbsolute(config[k]))||(config.tempRoot!==undefined&&!isAbsolute(config.tempRoot)))fail('invalid_pdf_tool_configuration');
  const fixed={...config};
  return async function parsePdf(input,options={}){
-  if(!options||typeof options!=='object'||Array.isArray(options)||Object.keys(options).some(k=>!['signal','maxTextBytes','rasterize'].includes(k)))fail('invalid_pdf_options');const max=outputLimit({maxTextBytes:options.maxTextBytes});if(options.rasterize!==undefined&&typeof options.rasterize!=='boolean')fail('invalid_pdf_options');if(options.signal!==undefined&&!(options.signal instanceof AbortSignal))fail('invalid_pdf_signal');if(options.signal?.aborted)fail('document_tool_cancelled');
+  if(!options||typeof options!=='object'||Array.isArray(options)||Object.keys(options).some(k=>!['signal','maxTextBytes','rasterize'].includes(k)))fail('invalid_pdf_options');const max=outputLimit({maxTextBytes:options.maxTextBytes});if(options.rasterize!==undefined&&![true,false,'needed'].includes(options.rasterize))fail('invalid_pdf_options');if(options.signal!==undefined&&!(options.signal instanceof AbortSignal))fail('invalid_pdf_signal');if(options.signal?.aborted)fail('document_tool_cancelled');
   const document=inspectDocument(input);if(document.format!=='pdf')fail('pdf_parser_unavailable');const bytes=Buffer.from(input.bytes),started=performance.now(),directory=await mkdtemp(join(fixed.tempRoot??tmpdir(),'localai-pdf-'));
   try{
    const file=join(directory,'input.pdf');await writeFile(file,bytes,{mode:0o600,flag:'wx'});
@@ -56,7 +57,7 @@ export function createPdfParser(config){
    const imageResult=await run('pdfimages',['-list',file],65536);if(imageResult.code!==0)fail('invalid_pdf');
    const text=await run('pdftotext',['-bbox-layout','-enc','UTF-8',file,'-'],10*1024**2);if(text.code!==0)fail('invalid_pdf');
    const decoded=decodePopplerOutput({info:infoText,bbox:decodeDocumentUtf8(text.stdout),images:decodeDocumentUtf8(imageResult.stdout)},document,{maxTextBytes:max}),rasters=[];let rasterBytes=0;
-   if(options.rasterize)for(const page of decoded.pages){const image=await run('pdftoppm',['-f',String(page.index),'-l',String(page.index),'-singlefile','-scale-to','2000','-png',file],20*1024**2);if(image.code!==0)fail('pdf_raster_failed');rasterBytes+=image.stdout.length;if(rasterBytes>20*1024**2)fail('pdf_raster_limit');const metadata=inspectDocument({name:'page.png',bytes:image.stdout});rasters.push(Object.freeze({page:page.index,bytes:image.stdout,sha256:metadata.sha256}));}
+   for(const page of selectPdfRasterPages(decoded.pages,options.rasterize)){const image=await run('pdftoppm',['-f',String(page.index),'-l',String(page.index),'-singlefile','-scale-to','2000','-png',file],20*1024**2);if(image.code!==0)fail('pdf_raster_failed');rasterBytes+=image.stdout.length;if(rasterBytes>20*1024**2)fail('pdf_raster_limit');const metadata=inspectDocument({name:'page.png',bytes:image.stdout});rasters.push(Object.freeze({page:page.index,bytes:image.stdout,sha256:metadata.sha256}));}
    return Object.freeze({document,parser:'poppler-25.03.0-candidate',pages:decoded.pages,rasters:Object.freeze(rasters),warnings:decoded.warnings});
   }finally{await rm(directory,{recursive:true,force:true});}
  };
