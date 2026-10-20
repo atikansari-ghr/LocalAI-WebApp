@@ -30,8 +30,10 @@ try{
  const client="import {callDocumentSupervisor} from 'file:///opt/localai/documents/candidates/job-unit-proof/services/documents/supervisor-client.mjs';const data=await callDocumentSupervisor({op:'status',id:process.argv[2],namespace:'user:synthetic',scope:process.argv[3]},{socketPath:process.argv[1]});process.stdout.write(JSON.stringify({data}));";
  const fetch=async scope=>JSON.parse((await exec('/opt/localai/node/bin/node',['--input-type=module','-e',client,socketPath,job.id,scope],{uid,gid,timeout:5000})).stdout);
  assert.equal((await fetch('private')).data.result.text,'مرحبا service');assert.equal((await fetch('other')).data,null);
+ const leaseClient="import {withInteractiveLease} from 'file:///opt/localai/documents/candidates/job-unit-proof/services/resources/interactive-lease.mjs';const result=await withInteractiveLease(()=>Promise.resolve('granted'),{socketPath:process.argv[1],timeoutMs:5000});process.stdout.write(result);";
+ assert.equal((await exec('/opt/localai/node/bin/node',['--input-type=module','-e',leaseClient,'/run/'+runtime+'/interactive.sock'],{uid,gid,timeout:6000})).stdout,'granted');
  await exec('/usr/bin/systemctl',['stop',unit],{timeout:15000});started=false;
  assert.equal(await show(unit,'MainPID'),'0');assert.equal(await show('localai.service','MainPID'),beforePid);
  const inventory=JSON.parse((await exec('/usr/bin/systemctl',['list-units','--all','--type=service','--output=json','--no-pager','localai-document-job-*.service'])).stdout);assert.equal(inventory.some(row=>['active','activating','deactivating'].includes(row.active)),false);
- console.log(JSON.stringify({gate:'native-document-supervisor-service',unit,completed:true,gracefulStop:true,missingWorkerRejectedBeforeState:true,localaiSocketAccess:true,scopeIsolation:true,noActiveJobs:true,gatewayPidUnchanged:true,activated:false,phase4Gate:'blocked'}));
+ console.log(JSON.stringify({gate:'native-document-supervisor-service',unit,completed:true,gracefulStop:true,missingWorkerRejectedBeforeState:true,localaiSocketAccess:true,interactiveLeaseAccess:true,scopeIsolation:true,noActiveJobs:true,gatewayPidUnchanged:true,activated:false,phase4Gate:'blocked'}));
 }finally{if(started)await exec('/usr/bin/systemctl',['stop',unit],{timeout:15000}).catch(()=>{});rmSync(dir,{recursive:true,force:true});}

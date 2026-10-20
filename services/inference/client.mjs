@@ -72,7 +72,7 @@ export function createInferenceClient({key,chatEndpoint='unix:/run/localai-chat/
  async function admitted(work,signal){
   if(busy)fail('inference_busy',429);busy=true;
   const controller=new AbortController(),combined=AbortSignal.any([controller.signal,AbortSignal.timeout(timeoutMs),...(signal?[signal]:[])]);
-  try{return await (admission?admission.runInteractive(()=>work(combined),{signal:combined}):work(combined));}
+  try{return await (admission?admission.runInteractive(leaseSignal=>work(AbortSignal.any([combined,leaseSignal])),{signal:combined}):work(combined));}
   catch(error){
    if(error instanceof InferenceError)throw error;
    if(signal?.aborted)throw signal.reason;

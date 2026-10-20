@@ -1,5 +1,5 @@
 import {existsSync,lstatSync,readdirSync} from 'node:fs';
-import {isAbsolute,join} from 'node:path';
+import {dirname,isAbsolute,join} from 'node:path';
 import {initializeVault,openVault} from '../../packages/auth/crypto.mjs';
 import {openDocumentJobStore} from './jobs.mjs';
 import {createDocumentJobRunner} from './job-runner.mjs';
@@ -8,6 +8,7 @@ import {createDocumentSupervisorSocket} from './supervisor-socket.mjs';
 import {createDocumentSupervisorScheduler} from './supervisor-scheduler.mjs';
 import {createResourceAdmission} from '../resources/admission.mjs';
 import {createResourceReader} from '../resources/snapshot.mjs';
+import {createInteractiveLeaseServer} from '../resources/interactive-lease.mjs';
 
 if(process.platform!=='linux'||process.getuid?.()!==0)throw new Error('native_supervisor_required');
 const proof=process.env.TARGET_TEST_LXC==='disposable';
@@ -24,11 +25,13 @@ if(keyExists&&!dbExists)throw new Error('document_state_recovery_required');
 const vault=keyExists?openVault(keyPath):readdirSync(stateDir).length===0?initializeVault(keyPath,{encryptedStateExists:false}):null;
 if(!vault)throw new Error('document_state_recovery_required');
 const store=openDocumentJobStore(dbPath,{vault}),runner=createDocumentJobRunner({store,workerPath});
-const scheduler=createDocumentSupervisorScheduler({runner,admission:createResourceAdmission({resources:createResourceReader()})});
+const admission=createResourceAdmission({resources:createResourceReader()});
+const scheduler=createDocumentSupervisorScheduler({runner,admission});
 let stopping=false,wake,stopPromise;
 await scheduler.prepare();
 const socket=await createDocumentSupervisorSocket({socketPath,store,runner,isStopping:()=>stopping});
-const requestStop=()=>{if(stopping)return;stopping=true;socket.close();wake?.();stopPromise=runner.stop();void stopPromise.catch(()=>{});};
+const lease=await createInteractiveLeaseServer({socketPath:join(dirname(socketPath),'interactive.sock'),admission});
+const requestStop=()=>{if(stopping)return;stopping=true;socket.close();void lease.close().catch(()=>{});wake?.();stopPromise=runner.stop();void stopPromise.catch(()=>{});};
 process.on('SIGTERM',requestStop);process.on('SIGINT',requestStop);
 const pause=ms=>new Promise(resolve=>{const timer=setTimeout(()=>{wake=null;resolve();},ms);wake=()=>{clearTimeout(timer);wake=null;resolve();};if(stopping)wake();});
 try{
@@ -38,4 +41,4 @@ try{
   if(!stopping)await pause(500);
  }
  await (stopPromise??runner.stop());
-}finally{process.off('SIGTERM',requestStop);process.off('SIGINT',requestStop);if(!stopping)socket.close();store.close();}
+}finally{process.off('SIGTERM',requestStop);process.off('SIGINT',requestStop);if(!stopping){socket.close();await lease.close();}store.close();}
