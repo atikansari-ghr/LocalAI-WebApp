@@ -27,5 +27,11 @@ export function dispatchDocumentMessage(message,{store,runner,now=Date.now}){
   const job=store.get(message.id,message.namespace,message.scope);if(!job)return null;
   return runner.cancel(message.id,message.namespace,message.scope)?{...job,status:job.status==='running'?'cancelling':'cancelled'}:job;
  }
+ if(message?.op==='delete'){
+  exact(message,['op','id','namespace','scope'],['id','namespace','scope']);owner(message);if(!jobId(message.id))throw invalid();
+  if(!store.get(message.id,message.namespace,message.scope))return null;
+  runner.cancel(message.id,message.namespace,message.scope);
+  return store.requestDelete(message.id,message.namespace,message.scope);
+ }
  throw invalid();
 }

@@ -104,6 +104,26 @@ test('gated document HTTP candidate bounds simultaneous incomplete uploads and r
   assert.equal((await f.request('/v1/extract',{method:'POST',body,headers:{'idempotency-key':'abcdefghijklmnop'}})).response.status,202);
  }finally{for(const request of held)request.destroy();}
 });
+test('gated document deletion requires scoped authorization and browser CSRF',async t=>{
+ const id='123e4567-e89b-42d3-a456-426614174000',calls=[];
+ const f=await fixture(t,'127.0.0.1',null,async message=>{calls.push(message);return message.scope==='absent'?null:message.scope==='pending'?{pending:true}:{deleted:true};});
+ await f.request('/auth/bootstrap');const pending=await f.request('/auth/setup/begin',{method:'POST',body:{code:f.auth.issueSetupCode(),username:'admin',password:'correct horse battery staple'}});
+ await f.request('/auth/setup/complete',{method:'POST',body:{code:totp(pending.value.totpSecret)}});
+ const token=f.jar.get('__Host-localai-session'),csrf=f.auth.session(token).csrf,path='/v1/documents/'+id;
+ assert.equal((await f.request(path+'?scope=private',{method:'DELETE',headers:{'x-csrf-token':'wrong'}})).response.status,403);
+ assert.equal(calls.length,0);
+ assert.equal((await f.request(path+'?scope=pending',{method:'DELETE'})).response.status,202);
+ assert.equal((await f.request(path+'?scope=private',{method:'DELETE'})).response.status,204);
+ assert.equal((await f.request(path+'?scope=absent',{method:'DELETE'})).response.status,404);
+ assert.equal(calls[0].op,'delete');
+ const app=f.apps.create(token,csrf,{name:'Delete test',capabilities:['document:read'],scopes:['private'],networks:['192.0.2.15/32']}),bearer={authorization:'Bearer '+app.key,cookie:''};
+ assert.equal((await f.request(path+'?scope=private',{method:'DELETE',headers:bearer})).response.status,403);
+ f.apps.revoke(token,csrf,app.id);
+ const allowed=f.apps.create(token,csrf,{name:'Delete allowed',capabilities:['document:delete'],scopes:['private'],networks:['192.0.2.15/32']}),key={authorization:'Bearer '+allowed.key,cookie:''};
+ assert.equal((await f.request(path+'?scope=other',{method:'DELETE',headers:key})).response.status,403);
+ assert.equal((await f.request(path+'?scope=private',{method:'DELETE',headers:key})).response.status,204);
+ assert.equal(calls.at(-1).namespace,'app:'+allowed.id);
+});
 test('browser setup requires proxy TLS origin and CSRF and issues secure session cookies',async t=>{
  const f=await fixture(t);
  assert.equal((await f.request('/auth/bootstrap',{headers:{'x-forwarded-proto':'http'}})).response.status,403);

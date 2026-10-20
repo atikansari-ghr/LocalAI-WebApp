@@ -27,8 +27,13 @@ try{
  for(let attempt=0;attempt<100;attempt++){const rows=JSON.parse((await exec('/usr/bin/systemctl',['list-units','--all','--type=service','--output=json','--no-pager','localai-document-job-*.service'])).stdout);if(rows.some(row=>row.active==='active')){observed=true;break;}await new Promise(resolve=>setTimeout(resolve,50));}
  assert.equal(observed,true);assert.equal(slowRunner.cancel(slow.id,'user:other','private'),false);assert.equal(slowRunner.cancel(slow.id,'user:synthetic','private'),true);
  await assert.rejects(running,/document_cancelled/);assert.equal(store.get(slow.id,'user:synthetic','private').status,'cancelled');
+ const deleting=submit('extract','native_delete_key_12345'),deleteRun=slowRunner.step();observed=false;
+ for(let attempt=0;attempt<100;attempt++){const rows=JSON.parse((await exec('/usr/bin/systemctl',['list-units','--all','--type=service','--output=json','--no-pager','localai-document-job-*.service'])).stdout);if(rows.some(row=>row.active==='active')){observed=true;break;}await new Promise(resolve=>setTimeout(resolve,50));}
+ assert.equal(observed,true);assert.equal(slowRunner.cancel(deleting.id,'user:synthetic','private'),true);
+ assert.deepEqual(store.requestDelete(deleting.id,'user:synthetic','private'),{pending:true});
+ await assert.rejects(deleteRun,/document_cancelled/);assert.equal(store.get(deleting.id,'user:synthetic','private'),null);
  assert.equal(await show('localai.service','MainPID'),beforePid);assert.equal(await show('localai.service','ActiveState'),'active');
  const inventory=JSON.parse((await exec('/usr/bin/systemctl',['list-units','--all','--type=service','--output=json','--no-pager','localai-document-job-*.service'])).stdout);
  assert.equal(inventory.some(row=>['active','activating','deactivating'].includes(row.active)),false);
- console.log(JSON.stringify({gate:'native-document-job-runner',completed:true,failedAfterConfirmedCleanup:true,cancelledActiveUnit:true,noActiveUnits:true,gatewayPidUnchanged:true,activated:false,phase4Gate:'blocked'}));
+ console.log(JSON.stringify({gate:'native-document-job-runner',completed:true,failedAfterConfirmedCleanup:true,cancelledActiveUnit:true,deletedAfterConfirmedCleanup:true,noActiveUnits:true,gatewayPidUnchanged:true,activated:false,phase4Gate:'blocked'}));
 }finally{store.close();rmSync(dir,{recursive:true,force:true});}

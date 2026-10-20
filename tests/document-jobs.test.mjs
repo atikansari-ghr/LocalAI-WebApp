@@ -124,3 +124,32 @@ test('Cancellation cannot be overwritten by a late worker failure',t=>{
  store.finishCancellation(job.id,claim.token,{nativeCleanupConfirmed:true});
  assert.equal(store.get(job.id,'app:one','private').status,'cancelled');store.close();
 });
+test('Deletion removes inactive encrypted data and hides foreign jobs',t=>{
+ const f=fixture(t),store=openDocumentJobStore(f.path,{vault:f.vault,now:()=>1000}),job=store.enqueue(submission());
+ assert.equal(store.requestDelete(job.id,'app:two','private'),null);
+ assert.deepEqual(store.requestDelete(job.id,'app:one','private'),{deleted:true});
+ assert.equal(store.get(job.id,'app:one','private'),null);
+ assert.equal(store.result(job.id,'app:one','private'),null);
+ store.close();const reopened=openDocumentJobStore(f.path,{vault:f.vault,now:()=>1001});
+ assert.equal(reopened.get(job.id,'app:one','private'),null);reopened.close();
+});
+test('Active deletion survives restart and removes the claim only after native cleanup',t=>{
+ const f=fixture(t),store=openDocumentJobStore(f.path,{vault:f.vault,now:()=>1000}),job=store.enqueue(submission()),claim=store.claim();
+ assert.deepEqual(store.requestDelete(job.id,'app:one','private'),{pending:true});
+ assert.equal(store.get(job.id,'app:one','private').status,'cancelling');store.close();
+ const reopened=openDocumentJobStore(f.path,{vault:f.vault,now:()=>1001});
+ assert.equal(reopened.get(job.id,'app:one','private').status,'cancelling');
+ assert.throws(()=>reopened.recoverInterrupted({nativeCleanupConfirmed:false}),/native_cleanup_required/);
+ assert.equal(reopened.get(job.id,'app:one','private').status,'cancelling');
+ assert.equal(reopened.recoverInterrupted({nativeCleanupConfirmed:true}),1);
+ assert.equal(reopened.get(job.id,'app:one','private'),null);
+ assert.throws(()=>reopened.finishCancellation(job.id,claim.token,{nativeCleanupConfirmed:true}),/job_claim_invalid/);reopened.close();
+});
+test('A verified private version-one job store upgrades without losing encrypted jobs',t=>{
+ const f=fixture(t),store=openDocumentJobStore(f.path,{vault:f.vault,now:()=>1000}),job=store.enqueue(submission());store.close();
+ const old=new DatabaseSync(f.path);old.exec('DROP TABLE document_deletions; PRAGMA user_version=1;');old.close();
+ const upgraded=openDocumentJobStore(f.path,{vault:f.vault,now:()=>1001});
+ assert.equal(upgraded.get(job.id,'app:one','private').status,'queued');
+ assert.deepEqual(upgraded.requestDelete(job.id,'app:one','private'),{deleted:true});upgraded.close();
+ const check=new DatabaseSync(f.path,{readOnly:true});assert.equal(check.prepare('PRAGMA user_version').get().user_version,2);check.close();
+});

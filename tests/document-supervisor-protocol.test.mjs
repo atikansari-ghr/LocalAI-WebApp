@@ -27,3 +27,9 @@ test('A full 10 MiB canonical upload reaches the encrypted store',()=>{
  const result=dispatchDocumentMessage({op:'submit',namespace:'user:owner',scope:'private',kind:'extract',idempotencyKey:'abcdefghijklmnop',name:'full.txt',mime:'text/plain',content_base64:Buffer.alloc(10*1024**2,120).toString('base64')},{store,runner});
  assert.equal(result.id,id);assert.equal(size,10*1024**2);
 });
+test('Private delete requests cancellation before durable scoped deletion',()=>{
+ const context=fixture();context.store.requestDelete=(...args)=>{context.calls.push(['requestDelete',...args]);return {pending:true};};
+ assert.deepEqual(dispatchDocumentMessage({op:'delete',id,namespace:'user:owner',scope:'private'},context),{pending:true});
+ assert.deepEqual(context.calls.slice(-2),[['cancel',id,'user:owner','private'],['requestDelete',id,'user:owner','private']]);
+ assert.throws(()=>dispatchDocumentMessage({op:'delete',id,namespace:'user:owner',scope:'private',path:'/tmp'},context));
+});

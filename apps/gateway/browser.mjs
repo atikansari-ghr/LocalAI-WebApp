@@ -62,15 +62,16 @@ export function createBrowserHandler({config,repo,auth,apps,passkeys,vault,infer
    };
    const path=new URL(request.url,config.origin).pathname;
    const documentStatus=/^\/v1\/documents\/([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\/status$/.exec(path);
-   if(documentClient&&(path==='/v1/ocr'||path==='/v1/extract'||documentStatus)){
-    const submit=!documentStatus,capability=submit?path.slice(4):'document:read';
-    if(request.method!==(submit?'POST':'GET'))throw new HttpError(405);
+   const documentDelete=/^\/v1\/documents\/([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/.exec(path);
+   if(documentClient&&(path==='/v1/ocr'||path==='/v1/extract'||documentStatus||documentDelete)){
+    const submit=!documentStatus&&!documentDelete,mutation=submit||Boolean(documentDelete),capability=submit?path.slice(4):documentDelete?'document:delete':'document:read';
+    if(request.method!==(submit?'POST':documentDelete?'DELETE':'GET'))throw new HttpError(405);
     if(request.headers.origin!==undefined&&request.headers.origin!==config.origin)throw new HttpError(403);
     const bearer=request.headers.authorization!==undefined;
     if(bearer&&(request.headers.cookie||!/^Bearer [A-Za-z0-9_-]{43}$/.test(request.headers.authorization)))throw new HttpError(403);
     let namespace,scope,appKey;
     if(bearer){appKey=request.headers.authorization.slice(7);if(submit)try{namespace='app:'+apps.authenticate(appKey,{capability,ip}).applicationId;}catch{throw new HttpError(403);}}
-    else{const session=requireSession();namespace='user:'+session.user.id;if(submit){if(request.headers.origin!==config.origin)throw new HttpError(403);sessionCsrf();}}
+    else{const session=requireSession();namespace='user:'+session.user.id;if(mutation){if(request.headers.origin!==config.origin)throw new HttpError(403);sessionCsrf();}}
     let command;
     if(submit){
      if(pendingDocumentUploads>=2)throw new HttpError(429);
@@ -84,10 +85,10 @@ export function createBrowserHandler({config,repo,auth,apps,passkeys,vault,infer
     }else{
      const url=new URL(request.url,config.origin);scope=url.searchParams.get('scope');if(url.searchParams.size!==1||typeof scope!=='string'||!/^[-A-Za-z0-9_.:]{1,128}$/.test(scope))throw new HttpError(400);
      if(bearer)try{namespace='app:'+apps.authenticate(appKey,{capability,ip,scopes:[scope]}).applicationId;}catch{throw new HttpError(403);}
-     command={op:'status',id:documentStatus[1],namespace,scope};
+     command={op:documentDelete?'delete':'status',id:(documentDelete??documentStatus)[1],namespace,scope};
     }
     const controller=new AbortController(),cancel=()=>controller.abort();response.once('close',cancel);request.once('aborted',cancel);
-    try{const result=await documentClient(command,{signal:controller.signal});if(!result)throw new HttpError(404);return submit?send(202,{id:result.id,status:result.status,status_url:'/v1/documents/'+result.id+'/status?scope='+encodeURIComponent(scope),expires_at:result.expiresAt}):send(200,result);}
+    try{const result=await documentClient(command,{signal:controller.signal});if(!result)throw new HttpError(404);if(submit)return send(202,{id:result.id,status:result.status,status_url:'/v1/documents/'+result.id+'/status?scope='+encodeURIComponent(scope),expires_at:result.expiresAt});if(documentDelete){if(result.pending)return send(202,{status:'cancelling'});response.statusCode=204;response.end();return;}return send(200,result);}
     catch(error){if(error instanceof HttpError)throw error;if(error?.message==='job_idempotency_conflict')throw new HttpError(409);if(error?.message==='document_too_large')throw new HttpError(413);if(error?.message==='invalid_document_supervisor_message')throw new HttpError(400);throw error;}
     finally{controller.abort();response.off('close',cancel);request.off('aborted',cancel);}
    }

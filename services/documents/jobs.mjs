@@ -15,6 +15,7 @@ const TABLE_SQL=`CREATE TABLE document_jobs (
   ) STRICT`;
 const INDEX_SQL='CREATE INDEX document_jobs_queue ON document_jobs(status,created_at)';
 const IDEMPOTENCY_SQL='CREATE UNIQUE INDEX document_jobs_idempotency ON document_jobs(namespace,scope,kind,idempotency_hash)';
+const DELETIONS_SQL='CREATE TABLE document_deletions (id TEXT PRIMARY KEY REFERENCES document_jobs(id) ON DELETE CASCADE) STRICT';
 const invalid=code=>new Error(code);
 function encrypt(key,id,kind,data){const nonce=randomBytes(12),cipher=createCipheriv('aes-256-gcm',key,nonce);cipher.setAAD(Buffer.from(id+':'+kind));return {nonce,body:Buffer.concat([cipher.update(data),cipher.final()]),tag:cipher.getAuthTag()};}
 function decrypt(key,id,kind,nonce,body,tag){const cipher=createDecipheriv('aes-256-gcm',key,nonce);cipher.setAAD(Buffer.from(id+':'+kind));cipher.setAuthTag(tag);return Buffer.concat([cipher.update(body),cipher.final()]);}
@@ -29,16 +30,20 @@ export function openDocumentJobStore(path,{vault,now=Date.now}={}){
  if(!parent.isDirectory()||(process.platform!=='win32'&&(parent.mode&0o077)!==0))throw invalid('unsafe_job_directory');
  let exists=false;try{const existing=lstatSync(absolute);if(!existing.isFile()||(process.platform!=='win32'&&(existing.mode&0o077)!==0))throw invalid('unsafe_job_database');exists=true;}catch(error){if(error.code!=='ENOENT')throw error;}
  function verifyIdentity(connection){
-  if(connection.prepare('PRAGMA application_id').get().application_id!==APPLICATION_ID||connection.prepare('PRAGMA user_version').get().user_version!==1)throw invalid('job_schema_incompatible');
+  const version=connection.prepare('PRAGMA user_version').get().user_version;
+  if(connection.prepare('PRAGMA application_id').get().application_id!==APPLICATION_ID||![1,2].includes(version))throw invalid('job_schema_incompatible');
   const objects=connection.prepare("SELECT name,sql FROM sqlite_master WHERE type IN ('table','view','trigger','index') AND name NOT LIKE 'sqlite_%' ORDER BY name").all();
-  if(objects.length!==3||objects[0].name!=='document_jobs'||objects[0].sql!==TABLE_SQL||objects[1].name!=='document_jobs_idempotency'||objects[1].sql!==IDEMPOTENCY_SQL||objects[2].name!=='document_jobs_queue'||objects[2].sql!==INDEX_SQL)throw invalid('job_schema_incompatible');
+  const expected=version===1?[['document_jobs',TABLE_SQL],['document_jobs_idempotency',IDEMPOTENCY_SQL],['document_jobs_queue',INDEX_SQL]]:[['document_deletions',DELETIONS_SQL],['document_jobs',TABLE_SQL],['document_jobs_idempotency',IDEMPOTENCY_SQL],['document_jobs_queue',INDEX_SQL]];
+  if(objects.length!==expected.length||objects.some((item,index)=>item.name!==expected[index][0]||item.sql!==expected[index][1]))throw invalid('job_schema_incompatible');
+  return version;
  }
  if(exists){const inspect=new DatabaseSync(absolute,{readOnly:true,allowExtension:false});try{verifyIdentity(inspect);}finally{inspect.close();}}
  const db=new DatabaseSync(absolute,{timeout:5000,enableForeignKeyConstraints:true,allowExtension:false});
  try{
   if(process.platform!=='win32')chmodSync(absolute,0o600);
   db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA trusted_schema=OFF;');
-  if(!exists){db.exec('BEGIN IMMEDIATE');try{db.exec(TABLE_SQL+';'+INDEX_SQL+';'+IDEMPOTENCY_SQL+';PRAGMA application_id='+APPLICATION_ID+';PRAGMA user_version=1;');db.exec('COMMIT');}catch(error){if(db.isTransaction)db.exec('ROLLBACK');throw error;}}
+  if(!exists){db.exec('BEGIN IMMEDIATE');try{db.exec(TABLE_SQL+';'+INDEX_SQL+';'+IDEMPOTENCY_SQL+';'+DELETIONS_SQL+';PRAGMA application_id='+APPLICATION_ID+';PRAGMA user_version=2;');db.exec('COMMIT');}catch(error){if(db.isTransaction)db.exec('ROLLBACK');throw error;}}
+  if(verifyIdentity(db)===1){db.exec('BEGIN IMMEDIATE');try{db.exec(DELETIONS_SQL+';PRAGMA user_version=2;');db.exec('COMMIT');}catch(error){if(db.isTransaction)db.exec('ROLLBACK');throw error;}}
   verifyIdentity(db);
   if(db.prepare('PRAGMA quick_check').get().quick_check!=='ok')throw invalid('job_store_corrupt');
  }catch(error){db.close();throw error;}
@@ -86,8 +91,9 @@ export function openDocumentJobStore(path,{vault,now=Date.now}={}){
   },
   result(id,namespace,scope){if(!validNamespace(namespace)||!validScope(scope))return null;const row=select.get(id,namespace,scope);if(!row||row.status!=='complete')return null;return JSON.parse(decrypt(keyFor(row),id,'result',row.result_nonce,row.result_body,row.result_tag).toString('utf8'));},
   cancel(id,namespace,scope){if(!validNamespace(namespace)||!validScope(scope))return false;return db.prepare("UPDATE document_jobs SET status=CASE status WHEN 'running' THEN 'cancelling' ELSE 'cancelled' END,updated_at=? WHERE id=? AND namespace=? AND scope=? AND status IN ('queued','running')").run(now(),id,namespace,scope).changes===1;},
-  finishCancellation(id,token,{nativeCleanupConfirmed}={}){if(typeof token!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(token))throw invalid('job_claim_invalid');if(nativeCleanupConfirmed!==true)throw invalid('native_cleanup_required');const hash=createHash('sha256').update(token).digest('hex');if(db.prepare("UPDATE document_jobs SET status='cancelled',claim_hash=NULL,updated_at=? WHERE id=? AND claim_hash=? AND status='cancelling'").run(now(),id,hash).changes!==1)throw invalid('job_claim_invalid');},
-  recoverInterrupted({nativeCleanupConfirmed}={}){if(nativeCleanupConfirmed!==true)throw invalid('native_cleanup_required');return db.prepare("UPDATE document_jobs SET status=CASE status WHEN 'cancelling' THEN 'cancelled' ELSE 'failed' END,claim_hash=NULL,error_code=CASE status WHEN 'running' THEN 'interrupted_after_restart' ELSE NULL END,updated_at=? WHERE status IN ('running','cancelling')").run(now()).changes;},
+  requestDelete(id,namespace,scope){if(!validNamespace(namespace)||!validScope(scope))return null;return transaction(()=>{const row=select.get(id,namespace,scope);if(!row)return null;if(['running','cancelling'].includes(row.status)){if(row.status==='running')db.prepare("UPDATE document_jobs SET status='cancelling',updated_at=? WHERE id=? AND status='running'").run(now(),id);db.prepare('INSERT OR IGNORE INTO document_deletions(id) VALUES(?)').run(id);return {pending:true};}db.prepare('DELETE FROM document_jobs WHERE id=? AND namespace=? AND scope=?').run(id,namespace,scope);return {deleted:true};});},
+  finishCancellation(id,token,{nativeCleanupConfirmed}={}){if(typeof token!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(token))throw invalid('job_claim_invalid');if(nativeCleanupConfirmed!==true)throw invalid('native_cleanup_required');const hash=createHash('sha256').update(token).digest('hex');return transaction(()=>{if(db.prepare("UPDATE document_jobs SET status='cancelled',claim_hash=NULL,updated_at=? WHERE id=? AND claim_hash=? AND status='cancelling'").run(now(),id,hash).changes!==1)throw invalid('job_claim_invalid');if(db.prepare('SELECT id FROM document_deletions WHERE id=?').get(id))db.prepare('DELETE FROM document_jobs WHERE id=?').run(id);});},
+  recoverInterrupted({nativeCleanupConfirmed}={}){if(nativeCleanupConfirmed!==true)throw invalid('native_cleanup_required');return transaction(()=>{const changed=db.prepare("UPDATE document_jobs SET status=CASE status WHEN 'cancelling' THEN 'cancelled' ELSE 'failed' END,claim_hash=NULL,error_code=CASE status WHEN 'running' THEN 'interrupted_after_restart' ELSE NULL END,updated_at=? WHERE status IN ('running','cancelling')").run(now()).changes;db.prepare('DELETE FROM document_jobs WHERE id IN (SELECT id FROM document_deletions)').run();return changed;});},
   purgeExpired(){return db.prepare("DELETE FROM document_jobs WHERE expires_at<=? AND status NOT IN ('running','cancelling')").run(now()).changes;},
   close(){db.close();}
  });

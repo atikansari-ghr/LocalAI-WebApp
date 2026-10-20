@@ -33,9 +33,9 @@ try{
  const jar=new Map();let csrf='';
  async function request(path,{method='GET',body,headers={}}={}){
   const payload=body===undefined?undefined:JSON.stringify(body);
-  const response=await new Promise((resolve,reject)=>{const req=httpRequest({host:'127.0.0.1',port:server.address().port,path,method,headers:{host:'localai.test','x-forwarded-proto':'https','x-forwarded-for':'192.0.2.15',origin:'https://localai.test',cookie:[...jar].map(([k,v])=>k+'='+v).join('; '),'content-type':'application/json','x-csrf-token':csrf,...(payload===undefined?{}:{'content-length':Buffer.byteLength(payload)}),...headers}},res=>{const chunks=[];res.on('data',c=>chunks.push(c));res.on('end',()=>resolve({status:res.statusCode,cookies:res.headers['set-cookie']??[],body:JSON.parse(Buffer.concat(chunks).toString())}));});req.on('error',reject);req.end(payload);});
+  const response=await new Promise((resolve,reject)=>{const req=httpRequest({host:'127.0.0.1',port:server.address().port,path,method,headers:{host:'localai.test','x-forwarded-proto':'https','x-forwarded-for':'192.0.2.15',origin:'https://localai.test',cookie:[...jar].map(([k,v])=>k+'='+v).join('; '),'content-type':'application/json','x-csrf-token':csrf,...(payload===undefined?{}:{'content-length':Buffer.byteLength(payload)}),...headers}},res=>{const chunks=[];res.on('data',c=>chunks.push(c));res.on('end',()=>{const raw=Buffer.concat(chunks).toString();resolve({status:res.statusCode,cookies:res.headers['set-cookie']??[],body:raw?JSON.parse(raw):null});});});req.on('error',reject);req.end(payload);});
   for(const cookie of response.cookies){const pair=cookie.split(';')[0],i=pair.indexOf('=');jar.set(pair.slice(0,i),pair.slice(i+1));}
-  if(response.body.csrf)csrf=response.body.csrf;return response;
+  if(response.body?.csrf)csrf=response.body.csrf;return response;
  }
  await request('/auth/bootstrap');const pending=await request('/auth/setup/begin',{method:'POST',body:{code:auth.issueSetupCode(),username:'syntheticadmin',password:'correct horse battery staple'}});
  assert.equal(pending.status,200);assert.equal((await request('/auth/setup/complete',{method:'POST',body:{code:totp(pending.body.totpSecret)}})).status,200);
@@ -43,7 +43,9 @@ try{
  assert.equal(submitted.status,202);let result;
  for(let i=0;i<100;i++){const check=await request(submitted.body.status_url);assert.equal(check.status,200);if(check.body.status==='complete'){result=check.body.result;break;}await new Promise(resolve=>setTimeout(resolve,100));}
  assert.equal(result?.text,'مرحبا browser-to-worker');assert.equal(await show('localai.service','MainPID'),beforePid);
- console.log(JSON.stringify({gate:'native-document-http-service',submitted:true,completed:true,statusPath:submitted.body.status_url,gatewayPidUnchanged:true,activated:false,phase4Gate:'blocked'}));
+ assert.equal((await request('/v1/documents/'+submitted.body.id+'?scope=private',{method:'DELETE'})).status,204);
+ assert.equal((await request(submitted.body.status_url)).status,404);
+ console.log(JSON.stringify({gate:'native-document-http-service',submitted:true,completed:true,deleted:true,gatewayPidUnchanged:true,activated:false,phase4Gate:'blocked'}));
 }finally{
  if(server)await new Promise(resolve=>server.close(resolve));repo?.close();
  if(started){await exec('/usr/bin/systemctl',['stop',unit],{timeout:20000}).catch(()=>{});const active=await show(unit,'ActiveState').catch(()=>null),pid=await show(unit,'MainPID').catch(()=>null);const rows=JSON.parse((await exec('/usr/bin/systemctl',['list-units','--all','--type=service','--output=json','--no-pager','localai-document-job-*.service'])).stdout);if(!['inactive','failed'].includes(active)||pid!=='0'||rows.some(row=>['active','activating','deactivating'].includes(row.active)))throw Error('proof_cleanup_unconfirmed');}
