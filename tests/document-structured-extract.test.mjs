@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {prepareStructuredEvidence,assessStructuredCandidates} from '../services/documents/structured-extract.mjs';
+import {prepareStructuredEvidence,assessStructuredCandidates,runStructuredExtractionCandidate} from '../services/documents/structured-extract.mjs';
 
 const schema={schemaVersion:1,schemaId:'invoice',revision:1,schema:{type:'object',additionalProperties:false,properties:{invoice:{type:'string',format:'identifier'},date:{type:'string',format:'date'},total:{type:'string',format:'amount'},note:{type:'string'}},required:['invoice','date','total']}};
 const hash='a'.repeat(64);
@@ -41,5 +41,22 @@ test('hostile or malformed model output cannot forge citations or silently norma
  assert.throws(()=>assessStructuredCandidates(schema,evidence,'not JSON'),/invalid_structured_candidate/);
  assert.throws(()=>assessStructuredCandidates(schema,evidence,'x'.repeat(32769)),/invalid_structured_candidate/);
  assert.throws(()=>assessStructuredCandidates(schema,evidence,'{"fields":{"total":[{"value":"120.50","evidenceIds":["u0002"]}],"total":[{"value":"125.50","evidenceIds":["u0003"]}]}}'),/invalid_structured_candidate/);
+ assert.throws(()=>assessStructuredCandidates(schema,evidence,String.raw`{"fields":{"invoice":[{"value":"INV-42","evidenceIds":["u0001"]}],"inv\u006fice":[{"value":"INV-42","evidenceIds":["u0001"]}]}}`),/invalid_structured_candidate/);
+ assert.equal(assessStructuredCandidates(schema,evidence,'{ "fields" : { "invoice" : [{"value":"INV-42","evidenceIds":["u0001"]}] } }').fields.invoice.status,'found');
+ assert.equal(assessStructuredCandidates(schema,evidence,String.raw`{"fields":{"invoice":[{"value":"\u0049NV-42","evidenceIds":["u0001"]}]}}`).fields.invoice.status,'found');
+ const numericSchema={schemaVersion:1,schemaId:'count',revision:1,schema:{type:'object',additionalProperties:false,properties:{count:{type:'number'}},required:[]}};
+ const numericEvidence=prepareStructuredEvidence({document:{sha256:hash},units:[{text:'Count 1',source:{kind:'text-line'}}]});
+ assert.equal(assessStructuredCandidates(numericSchema,numericEvidence,'{"fields":{"count":[{"value":1.0,"evidenceIds":["u0001"]}]}}').fields.count.status,'found');
  assert.throws(()=>assessStructuredCandidates(schema,[...evidence],JSON.stringify({fields:{}})),/invalid_structured_candidate/);
+});
+
+test('candidate invokes qualified private inference only with bounded evidence and checks its result',async()=>{
+ let seen;
+ const inference={chat:async(request,options)=>{seen={request,options};return {choices:[{message:{content:JSON.stringify({fields:{invoice:[{value:'INV-42',evidenceIds:['u0001']}]}})}}]};}};
+ const signal=new AbortController().signal;
+ const result=await runStructuredExtractionCandidate({report,schema,inference,signal});
+ assert.equal(result.fields.invoice.status,'found');assert.equal(result.fields.total.status,'missing');
+ assert.equal(seen.request.temperature,0);assert.equal(seen.request.stream,false);assert.equal(seen.options.signal,signal);
+ assert.ok(seen.request.messages[1].content.includes('INV-42'));
+ await assert.rejects(runStructuredExtractionCandidate({report,schema,inference:{chat:async()=>({choices:[{message:{content:'{"fields":{},"fields":{}}'}}]})}}),/invalid_structured_candidate/);
 });
