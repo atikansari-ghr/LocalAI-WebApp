@@ -20,7 +20,7 @@ const unsafeParent='/opt/localai/documents/candidates/job-unit-proof/tests/targe
 mkdirSync(unsafeParent);chmodSync(unsafeParent,0o777);copyFileSync(workerPath,unsafeParent+'/worker.mjs');
 try{await assert.rejects(runNativeDocumentUnit({workerPath:unsafeParent+'/worker.mjs',request:{kind:'extract',name:'unsafe.txt',mime:'text/plain',content_base64:'eA==',options:{}},timeoutMs:10000}),/unsafe_document_worker/);}
 finally{rmSync(unsafeParent,{recursive:true,force:true});}
-await assert.rejects(runNativeDocumentUnit({workerPath,request:{kind:'ocr',name:'proof.txt',mime:'text/plain',content_base64:'eA==',options:{}},timeoutMs:10000}),/document_worker_invalid_frame/);
+await assert.rejects(runNativeDocumentUnit({workerPath,request:{kind:'ocr',name:'proof.txt',mime:'text/plain',content_base64:'eA==',options:{}},timeoutMs:10000}),error=>error.message==='document_worker_invalid_frame'&&error.cleanupConfirmed===true);
 const controller=new AbortController(),cancelled=runNativeDocumentUnit({workerPath,request:{kind:'extract',name:'cancel.txt',mime:'text/plain',content_base64:'eA==',options:{}},signal:controller.signal,timeoutMs:10000});controller.abort();
 await assert.rejects(cancelled,/document_cancelled/);
 await assert.rejects(runNativeDocumentUnit({workerPath:'/opt/localai/documents/candidates/job-unit-proof/tests/target/document-noisy-worker.mjs',request:{kind:'extract',name:'noisy.txt',mime:'text/plain',content_base64:'eA==',options:{}},timeoutMs:10000}),/document_worker_output_limit/);

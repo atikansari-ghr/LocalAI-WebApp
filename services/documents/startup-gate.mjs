@@ -10,6 +10,7 @@ export function createDocumentStartupGate({recover=recoverDocumentUnits,launch=r
  async function ensureRecovered(){if(ready)return;await recover({onStopped});ready=true;}
  return Object.freeze({
   start(){return serialize(ensureRecovered);},
+  requireRecovery(){return serialize(()=>{ready=false;});},
   run(options){return serialize(async()=>{
    await ensureRecovered();
    try{const result=await launch(options);if(result?.cleanupConfirmed!==true)throw new Error('native_cleanup_unconfirmed');return result;}

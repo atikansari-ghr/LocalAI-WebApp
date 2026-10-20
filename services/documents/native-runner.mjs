@@ -41,6 +41,6 @@ export async function runNativeDocumentUnit({request,signal,workerPath,timeoutMs
  }catch(error){
   await exec('/usr/bin/systemctl',['stop',unit],{timeout:10000,maxBuffer:8192}).catch(()=>{});
   try{await deadline(exited,10000,'document_worker_exit_timeout');await stopped();}catch{throw fail('native_cleanup_unconfirmed');}
-  throw error;
+  throw Object.assign(new Error(error instanceof Error?error.message:'document_worker_failed',{cause:error}),{cleanupConfirmed:true,unit});
  }finally{signal?.removeEventListener('abort',cancel);child.kill();}
 }
