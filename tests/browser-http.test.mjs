@@ -13,11 +13,11 @@ import { createAuthService } from '../packages/auth/service.mjs';
 import { createApplicationService } from '../packages/auth/applications.mjs';
 import { createPasskeyService } from '../packages/auth/passkeys.mjs';
 import { createBrowserHandler } from '../apps/gateway/browser.mjs';
-async function fixture(t,trusted='127.0.0.1',inference){
+async function fixture(t,trusted='127.0.0.1',inference,documentClient){
  const dir=mkdtempSync(join(tmpdir(),'localai-browser-')),repo=openSecurityRepository(join(dir,'s.sqlite')),vault=initializeVault(join(dir,'master.key'),{encryptedStateExists:repo.hasEncryptedState()});
  const auth=createAuthService({repo,vault}),apps=createApplicationService({repo,auth}),passkeys=createPasskeyService({repo,auth,rpId:'localai.test',origin:'https://localai.test'});
  const config=loadConfig({LOCALAI_TRANSPORT:'proxy',LOCALAI_ORIGIN:'https://localai.test',LOCALAI_TRUSTED_PROXIES:trusted});
- const server=createServer(createBrowserHandler({config,repo,auth,apps,passkeys,vault,inference}));server.listen(0,'127.0.0.1');await once(server,'listening');
+ const server=createServer(createBrowserHandler({config,repo,auth,apps,passkeys,vault,inference,documentClient}));server.listen(0,'127.0.0.1');await once(server,'listening');
  t.after(async()=>{await new Promise(r=>server.close(r));repo.close();rmSync(dir,{recursive:true,force:true});});
  const jar=new Map();let csrf='';
  async function request(path,{method='GET',body,headers={}}={}){
@@ -32,7 +32,7 @@ async function fixture(t,trusted='127.0.0.1',inference){
   if(value.csrf)csrf=value.csrf;
   return {response,value};
  }
- return {auth,repo,apps,request,jar,statePath:join(dir,'s.sqlite')};
+ return {auth,repo,apps,request,jar,port:server.address().port,statePath:join(dir,'s.sqlite')};
 }
 
 test('unified AI routes enforce application capability IP policy and browser CSRF before inference',async t=>{
@@ -60,6 +60,49 @@ test('draft document operations remain unavailable before their worker and relea
  for(const [method,path] of [['POST','/v1/ocr'],['POST','/v1/extract'],['GET','/v1/documents/00000000-0000-4000-8000-000000000000/status'],['DELETE','/v1/documents/00000000-0000-4000-8000-000000000000']]){
   assert.equal((await f.request(path,{method,body:method==='POST'?{}:undefined})).response.status,404);
  }
+});
+test('gated document HTTP candidate derives owner and scope before private submission',async t=>{
+ const calls=[],jobId='123e4567-e89b-42d3-a456-426614174000',documentClient=async message=>{calls.push(message);if(message.op==='status')return message.scope==='absent'?null:{id:jobId,status:'complete',result:{text:'x'}};if(message.idempotencyKey==='conflictkey123456')throw Error('job_idempotency_conflict');return {id:jobId,status:'queued',expiresAt:Date.now()+60000};};
+ const f=await fixture(t,'127.0.0.1',null,documentClient);await f.request('/auth/bootstrap');
+ const pending=await f.request('/auth/setup/begin',{method:'POST',body:{code:f.auth.issueSetupCode(),username:'admin',password:'correct horse battery staple'}});
+ await f.request('/auth/setup/complete',{method:'POST',body:{code:totp(pending.value.totpSecret)}});
+ const token=f.jar.get('__Host-localai-session'),userId=f.auth.session(token).user.id,body={name:'x.txt',mime:'text/plain',content_base64:'eA==',scope:'private'};
+ const headers={'idempotency-key':'abcdefghijklmnop'};
+ assert.equal((await f.request('/v1/extract',{method:'POST',body,headers:{...headers,'x-csrf-token':'wrong'}})).response.status,403);
+ assert.equal(calls.length,0);
+ const submitted=await f.request('/v1/extract',{method:'POST',body,headers});assert.equal(submitted.response.status,202);
+ assert.deepEqual([calls[0].op,calls[0].namespace,calls[0].scope],['submit','user:'+userId,'private']);
+ assert.equal((await f.request('/v1/documents/'+jobId+'/status?scope=private')).value.result.text,'x');
+ assert.equal((await f.request('/v1/documents/'+jobId+'/status?scope=absent')).response.status,404);
+ assert.equal((await f.request('/v1/extract',{method:'POST',body,headers:{'idempotency-key':'conflictkey123456'}})).response.status,409);
+ const app=f.apps.create(token,f.auth.session(token).csrf,{name:'Documents',capabilities:['extract','document:read'],scopes:['private'],networks:['192.0.2.15/32']});
+ const bearer={authorization:'Bearer '+app.key,cookie:''};
+ assert.equal((await f.request('/v1/extract',{method:'POST',body,headers:{...headers,...bearer}})).response.status,202);
+ assert.equal(calls.at(-1).namespace,'app:'+app.id);
+ assert.equal((await f.request('/v1/documents/'+jobId+'/status?scope=private',{headers:bearer})).response.status,200);
+ assert.equal((await f.request('/v1/extract',{method:'POST',body:{...body,scope:'other'},headers:{...headers,...bearer}})).response.status,403);
+ assert.equal((await f.request('/v1/documents/'+jobId+'/status?scope=other',{headers:bearer})).response.status,403);
+ assert.equal((await f.request('/v1/extract',{method:'POST',body,headers:{...headers,...bearer,cookie:'__Host-localai-session='+token}})).response.status,403);
+ const beforeInvalid=calls.length;
+ assert.equal((await f.request('/v1/extract',{method:'POST',body:{...body,mime:'application/pdf'},headers})).response.status,400);
+ assert.equal((await f.request('/v1/extract',{method:'POST',body:{...body,ocr:'arbitrary'},headers})).response.status,400);
+ assert.equal((await f.request('/v1/extract',{method:'POST',body:{...body,mime:undefined},headers})).response.status,400);
+ assert.equal((await f.request('/v1/documents/'+jobId+'/status?scope=private&scope=other')).response.status,400);
+ assert.equal(calls.length,beforeInvalid);
+ f.apps.revoke(token,f.auth.session(token).csrf,app.id);
+ assert.equal((await f.request('/v1/documents/'+jobId+'/status?scope=private',{headers:bearer})).response.status,403);
+});
+test('gated document HTTP candidate bounds simultaneous incomplete uploads and releases slots',async t=>{
+ const f=await fixture(t,'127.0.0.1',null,async()=>({id:'123e4567-e89b-42d3-a456-426614174000',status:'queued',expiresAt:Date.now()+60000}));await f.request('/auth/bootstrap');
+ const pending=await f.request('/auth/setup/begin',{method:'POST',body:{code:f.auth.issueSetupCode(),username:'admin',password:'correct horse battery staple'}});await f.request('/auth/setup/complete',{method:'POST',body:{code:totp(pending.value.totpSecret)}});
+ const headers={host:'localai.test','x-forwarded-proto':'https','x-forwarded-for':'192.0.2.15',origin:'https://localai.test',cookie:'__Host-localai-session='+f.jar.get('__Host-localai-session'),'x-csrf-token':f.auth.session(f.jar.get('__Host-localai-session')).csrf,'idempotency-key':'abcdefghijklmnop','content-type':'application/json','content-length':'1000'};
+ const held=[];for(let i=0;i<2;i++){const request=httpRequest({host:'127.0.0.1',port:f.port,path:'/v1/extract',method:'POST',headers},()=>{});request.on('error',()=>{});request.write('{"name":"unfinished');held.push(request);}await new Promise(resolve=>setTimeout(resolve,30));
+ try{
+  const body={name:'x.txt',mime:'text/plain',content_base64:'eA==',scope:'private'};
+  assert.equal((await f.request('/v1/extract',{method:'POST',body,headers:{'idempotency-key':'abcdefghijklmnop'}})).response.status,429);
+  for(const request of held)request.destroy();await new Promise(resolve=>setTimeout(resolve,30));
+  assert.equal((await f.request('/v1/extract',{method:'POST',body,headers:{'idempotency-key':'abcdefghijklmnop'}})).response.status,202);
+ }finally{for(const request of held)request.destroy();}
 });
 test('browser setup requires proxy TLS origin and CSRF and issues secure session cookies',async t=>{
  const f=await fixture(t);

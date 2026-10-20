@@ -3,6 +3,7 @@ import { newToken,equalSecret } from '../../packages/auth/crypto.mjs';
 import { matchesNetwork,resolveClientIp } from '../../packages/auth/network.mjs';
 import { AuthError } from '../../packages/auth/service.mjs';
 import { InferenceError } from '../../services/inference/client.mjs';
+import {inspectDocument,DocumentError} from '../../services/documents/validation.mjs';
 const assets=new Map([
  ['/assets/passkey-name.js',['text/javascript; charset=utf-8',readFileSync(new URL('../../packages/auth/passkey-name.mjs',import.meta.url))]],
  ['/assets/app.js',['text/javascript; charset=utf-8',readFileSync(new URL('../web-admin/app.js',import.meta.url))]],
@@ -20,19 +21,22 @@ function cookies(request){
  return result;
 }
 function setCookie(response,name,value,maxAge){const existing=response.getHeader('Set-Cookie')??[];response.setHeader('Set-Cookie',[...existing,name+'='+value+'; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age='+maxAge]);}
-function readJson(request){
+function readJson(request,maxBytes=65536,deadlineMs=0){
  return new Promise((resolve,reject)=>{
   let bytes=0,done=false;const chunks=[];
-  const fail=status=>{if(!done){done=true;reject(new HttpError(status));}};
+  const timer=deadlineMs?setTimeout(()=>{chunks.length=0;fail(408);request.resume();},deadlineMs):null;timer?.unref();
+  const fail=status=>{if(!done){done=true;clearTimeout(timer);reject(new HttpError(status));}};
   if(!/^application\/json(?:;\s*charset=utf-8)?$/i.test(request.headers['content-type']??'')){request.resume();fail(415);return;}
-  request.on('data',chunk=>{if(done)return;bytes+=chunk.length;if(bytes>65536){chunks.length=0;fail(413);}else chunks.push(chunk);});
+  request.on('data',chunk=>{if(done)return;bytes+=chunk.length;if(bytes>maxBytes){chunks.length=0;fail(413);}else chunks.push(chunk);});
   request.on('error',()=>fail(400));
-  request.on('end',()=>{if(done)return;done=true;try{const body=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(Buffer.concat(chunks)));if(!body||Array.isArray(body)||typeof body!=='object')throw new Error();resolve(body);}catch{reject(new HttpError(400));}});
+  request.on('aborted',()=>fail(400));
+  request.on('end',()=>{if(done)return;done=true;clearTimeout(timer);try{const body=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(Buffer.concat(chunks)));if(!body||Array.isArray(body)||typeof body!=='object')throw new Error();resolve(body);}catch{reject(new HttpError(400));}});
  });
 }
 function fields(body,allowed){if(Object.keys(body).some(k=>!allowed.includes(k)))throw new HttpError(400);return body;}
-export function createBrowserHandler({config,repo,auth,apps,passkeys,vault,inference}){
+export function createBrowserHandler({config,repo,auth,apps,passkeys,vault,inference,documentClient}){
  const origin=new URL(config.origin);
+ let pendingDocumentUploads=0;
  return (request,response)=>{
   const send=(status,body,type='application/json; charset=utf-8')=>{response.statusCode=status;response.setHeader('Content-Type',type);response.end(type.startsWith('application/json')?JSON.stringify(body):body);};
   response.setHeader('Cache-Control','no-store');response.setHeader('X-Content-Type-Options','nosniff');response.setHeader('Referrer-Policy','no-referrer');
@@ -57,6 +61,36 @@ export function createBrowserHandler({config,repo,auth,apps,passkeys,vault,infer
     const {token,...safe}=value;return send(200,safe);
    };
    const path=new URL(request.url,config.origin).pathname;
+   const documentStatus=/^\/v1\/documents\/([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\/status$/.exec(path);
+   if(documentClient&&(path==='/v1/ocr'||path==='/v1/extract'||documentStatus)){
+    const submit=!documentStatus,capability=submit?path.slice(4):'document:read';
+    if(request.method!==(submit?'POST':'GET'))throw new HttpError(405);
+    if(request.headers.origin!==undefined&&request.headers.origin!==config.origin)throw new HttpError(403);
+    const bearer=request.headers.authorization!==undefined;
+    if(bearer&&(request.headers.cookie||!/^Bearer [A-Za-z0-9_-]{43}$/.test(request.headers.authorization)))throw new HttpError(403);
+    let namespace,scope,appKey;
+    if(bearer){appKey=request.headers.authorization.slice(7);if(submit)try{namespace='app:'+apps.authenticate(appKey,{capability,ip}).applicationId;}catch{throw new HttpError(403);}}
+    else{const session=requireSession();namespace='user:'+session.user.id;if(submit){if(request.headers.origin!==config.origin)throw new HttpError(403);sessionCsrf();}}
+    let command;
+    if(submit){
+     if(pendingDocumentUploads>=2)throw new HttpError(429);
+     pendingDocumentUploads++;let released=false;const release=()=>{if(released)return;released=true;pendingDocumentUploads--;response.off('finish',release);response.off('close',release);};response.once('finish',release);response.once('close',release);
+     const body=fields(await readJson(request,14*1024*1024,15000),['name','mime','content_base64','scope','ocr','language']);scope=body.scope;
+     if(typeof scope!=='string'||!/^[-A-Za-z0-9_.:]{1,128}$/.test(scope)||typeof body.mime!=='string'||body.ocr!==undefined&&!['auto','off','all'].includes(body.ocr)||body.language!==undefined&&!['auto','en','ar'].includes(body.language)||typeof request.headers['idempotency-key']!=='string'||!/^[A-Za-z0-9_-]{16,128}$/.test(request.headers['idempotency-key'])||typeof body.content_base64!=='string'||body.content_base64.length<4||body.content_base64.length>13981016||body.content_base64.length%4!==0||!/^[A-Za-z0-9+/]+={0,2}$/.test(body.content_base64))throw new HttpError(400);
+     const bytes=Buffer.from(body.content_base64,'base64');if(bytes.toString('base64')!==body.content_base64)throw new HttpError(400);
+     try{inspectDocument({name:body.name,mime:body.mime,bytes});}catch(error){if(error instanceof DocumentError)throw new HttpError(error.code==='document_too_large'?413:400);throw error;}
+     if(bearer)try{namespace='app:'+apps.authenticate(appKey,{capability,ip,scopes:[scope]}).applicationId;}catch{throw new HttpError(403);}
+     command={op:'submit',namespace,scope,kind:capability,name:body.name,mime:body.mime,content_base64:body.content_base64,idempotencyKey:request.headers['idempotency-key'],options:{ocr:body.ocr??'auto',language:body.language??'auto'}};
+    }else{
+     const url=new URL(request.url,config.origin);scope=url.searchParams.get('scope');if(url.searchParams.size!==1||typeof scope!=='string'||!/^[-A-Za-z0-9_.:]{1,128}$/.test(scope))throw new HttpError(400);
+     if(bearer)try{namespace='app:'+apps.authenticate(appKey,{capability,ip,scopes:[scope]}).applicationId;}catch{throw new HttpError(403);}
+     command={op:'status',id:documentStatus[1],namespace,scope};
+    }
+    const controller=new AbortController(),cancel=()=>controller.abort();response.once('close',cancel);request.once('aborted',cancel);
+    try{const result=await documentClient(command,{signal:controller.signal});if(!result)throw new HttpError(404);return submit?send(202,{id:result.id,status:result.status,status_url:'/v1/documents/'+result.id+'/status?scope='+encodeURIComponent(scope),expires_at:result.expiresAt}):send(200,result);}
+    catch(error){if(error instanceof HttpError)throw error;if(error?.message==='job_idempotency_conflict')throw new HttpError(409);if(error?.message==='document_too_large')throw new HttpError(413);if(error?.message==='invalid_document_supervisor_message')throw new HttpError(400);throw error;}
+    finally{controller.abort();response.off('close',cancel);request.off('aborted',cancel);}
+   }
    if(path.startsWith('/v1/')){
     const routes={'/v1/models':{method:'GET',capability:'models'},'/v1/chat/completions':{method:'POST',capability:'chat'},'/v1/embeddings':{method:'POST',capability:'embeddings'}};
     const route=routes[path];if(!route)throw new HttpError(404);
