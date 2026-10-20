@@ -9,6 +9,7 @@ import {createDocumentSupervisorScheduler} from './supervisor-scheduler.mjs';
 import {createResourceAdmission} from '../resources/admission.mjs';
 import {createResourceReader} from '../resources/snapshot.mjs';
 import {createInteractiveLeaseServer} from '../resources/interactive-lease.mjs';
+import {createInteractiveLeaseBarrier} from '../resources/interactive-lease-barrier.mjs';
 
 if(process.platform!=='linux'||process.getuid?.()!==0)throw new Error('native_supervisor_required');
 const proof=process.env.TARGET_TEST_LXC==='disposable';
@@ -26,18 +27,20 @@ const vault=keyExists?openVault(keyPath):readdirSync(stateDir).length===0?initia
 if(!vault)throw new Error('document_state_recovery_required');
 const store=openDocumentJobStore(dbPath,{vault}),runner=createDocumentJobRunner({store,workerPath});
 const admission=createResourceAdmission({resources:createResourceReader()});
-const scheduler=createDocumentSupervisorScheduler({runner,admission});
+const barrier=createInteractiveLeaseBarrier({path:join(stateDir,'interactive.lock')});
+const scheduler=createDocumentSupervisorScheduler({runner,admission,barrier});
 let stopping=false,wake,stopPromise;
 await scheduler.prepare();
 const socket=await createDocumentSupervisorSocket({socketPath,store,runner,isStopping:()=>stopping});
-const lease=await createInteractiveLeaseServer({socketPath:join(dirname(socketPath),'interactive.sock'),admission});
+const lease=await createInteractiveLeaseServer({socketPath:join(dirname(socketPath),'interactive.sock'),admission,barrier});
 const requestStop=()=>{if(stopping)return;stopping=true;socket.close();void lease.close().catch(()=>{});wake?.();stopPromise=runner.stop();void stopPromise.catch(()=>{});};
 process.on('SIGTERM',requestStop);process.on('SIGINT',requestStop);
 const pause=ms=>new Promise(resolve=>{const timer=setTimeout(()=>{wake=null;resolve();},ms);wake=()=>{clearTimeout(timer);wake=null;resolve();};if(stopping)wake();});
+let reportedBarrier=false;
 try{
  while(!stopping){
-  try{const result=await scheduler.step();if(result)continue;}
-  catch(error){const code=typeof error?.message==='string'&&/^[a-z][a-z0-9_]{1,63}$/.test(error.message)?error.message:'document_worker_failed';if(!['background_resource_pressure','background_postponed','resource_measurement_unavailable'].includes(code))process.stderr.write(code+'\n');}
+  try{const result=await scheduler.step();reportedBarrier=false;if(result)continue;}
+  catch(error){const code=typeof error?.message==='string'&&/^[a-z][a-z0-9_]{1,63}$/.test(error.message)?error.message:'document_worker_failed';if(code==='interactive_recovery_required'){if(!reportedBarrier)process.stderr.write(code+'\n');reportedBarrier=true;}else if(!['background_resource_pressure','background_postponed','resource_measurement_unavailable'].includes(code))process.stderr.write(code+'\n');}
   if(!stopping)await pause(500);
  }
  await (stopPromise??runner.stop());

@@ -11,6 +11,7 @@ import {createDocumentJobRunner} from '../../services/documents/job-runner.mjs';
 import {createResourceAdmission} from '../../services/resources/admission.mjs';
 import {createResourceReader} from '../../services/resources/snapshot.mjs';
 import {createInteractiveLeaseServer,createInteractiveLeaseAdmission} from '../../services/resources/interactive-lease.mjs';
+import {createInteractiveLeaseBarrier} from '../../services/resources/interactive-lease-barrier.mjs';
 import {createInferenceClient} from '../../services/inference/client.mjs';
 
 assert.equal(process.env.TARGET_TEST_LXC,'disposable');assert.equal(process.getuid(),0);
@@ -19,7 +20,7 @@ const units=()=>JSON.parse(execFileSync('/usr/bin/systemctl',['list-units','--al
 const beforePid=show('localai.service','MainPID'),dir=mkdtempSync(join(tmpdir(),'localai-rich-preempt-proof-'));
 const vault=initializeVault(join(dir,'master.key'),{encryptedStateExists:false}),store=openDocumentJobStore(join(dir,'jobs.sqlite'),{vault}),resources=createResourceReader(),admission=createResourceAdmission({resources,monitorIntervalMs:100}),socketPath=join(dir,'interactive.sock');
 const key=(await readFile('/run/credentials/localai.service/ai-backend-key','utf8')).trim();assert.match(key,/^[A-Za-z0-9_-]{43}$/);
-const lease=await createInteractiveLeaseServer({socketPath,admission});
+const lease=await createInteractiveLeaseServer({socketPath,admission,barrier:createInteractiveLeaseBarrier({path:join(dir,'interactive.lock')})});
 let runner;
 try{
  const workerPath='/opt/localai/documents/candidates/processor/probe/tests/target/document-rich-worker.mjs';runner=createDocumentJobRunner({store,workerPath,timeoutMs:120000});
