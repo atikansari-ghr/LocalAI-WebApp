@@ -27,7 +27,7 @@ try{
  }
  assert.equal(completed,true);assert.equal(await show(unit,'ActiveState'),'active');assert.ok(Number(await show(unit,'MainPID'))>0);
  const uid=Number((await exec('/usr/bin/id',['-u','localai'])).stdout.trim()),gid=Number((await exec('/usr/bin/id',['-g','localai'])).stdout.trim());
- const client="import {createConnection} from 'node:net';const s=createConnection(process.argv[1]);let result='';s.setTimeout(3000,()=>s.destroy(new Error('timeout')));s.on('data',chunk=>result+=chunk);s.on('end',()=>process.stdout.write(result));s.on('connect',()=>s.end(JSON.stringify({op:'status',id:process.argv[2],namespace:'user:synthetic',scope:process.argv[3]})+'\\n'));";
+ const client="import {callDocumentSupervisor} from 'file:///opt/localai/documents/candidates/job-unit-proof/services/documents/supervisor-client.mjs';const data=await callDocumentSupervisor({op:'status',id:process.argv[2],namespace:'user:synthetic',scope:process.argv[3]},{socketPath:process.argv[1]});process.stdout.write(JSON.stringify({data}));";
  const fetch=async scope=>JSON.parse((await exec('/opt/localai/node/bin/node',['--input-type=module','-e',client,socketPath,job.id,scope],{uid,gid,timeout:5000})).stdout);
  assert.equal((await fetch('private')).data.result.text,'مرحبا service');assert.equal((await fetch('other')).data,null);
  await exec('/usr/bin/systemctl',['stop',unit],{timeout:15000});started=false;
