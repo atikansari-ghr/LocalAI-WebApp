@@ -5,9 +5,11 @@ import {createDocumentStartupGate} from './startup-gate.mjs';
 export function createDocumentJobRunner({store,workerPath,recover,launch,timeoutMs=120000}={}){
  if(!store||['recoverInterrupted','claim','get','complete','fail','finishCancellation','cancel'].some(method=>typeof store[method]!=='function')||typeof workerPath!=='string'||!workerPath||!Number.isSafeInteger(timeoutMs)||timeoutMs<100||timeoutMs>120000)throw new TypeError('invalid_document_job_runner');
  const gate=createDocumentStartupGate({recover,launch,onStopped:()=>store.recoverInterrupted({nativeCleanupConfirmed:true})});
- let tail=Promise.resolve(),active=null;
- function step(){const result=tail.then(async()=>{
+ let tail=Promise.resolve(),active=null,stopping=false,stopPromise;
+ function step(){if(stopping)return Promise.reject(new Error('document_runner_stopping'));const result=tail.then(async()=>{
+  if(stopping)throw new Error('document_runner_stopping');
   await gate.start();
+  if(stopping)throw new Error('document_runner_stopping');
   const job=store.claim();if(!job)return null;
   const controller=new AbortController();active={id:job.id,controller};
   const request={kind:job.kind,name:job.name,mime:job.mime,content_base64:job.bytes.toString('base64'),options:job.options};
@@ -22,5 +24,6 @@ export function createDocumentJobRunner({store,workerPath,recover,launch,timeout
    throw error;
   }finally{active=null;}
  });tail=result.catch(()=>{});return result;}
- return Object.freeze({step,cancel(id,namespace,scope){const changed=store.cancel(id,namespace,scope);if(changed&&active?.id===id)active.controller.abort();return changed;}});
+ function stop(){if(stopPromise)return stopPromise;stopping=true;active?.controller.abort();stopPromise=(async()=>{await tail;await gate.requireRecovery();await gate.start();})();return stopPromise;}
+ return Object.freeze({step,stop,cancel(id,namespace,scope){const changed=store.cancel(id,namespace,scope);if(changed&&active?.id===id)active.controller.abort();return changed;}});
 }

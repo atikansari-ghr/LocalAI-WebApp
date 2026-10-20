@@ -8,14 +8,19 @@ import {invokeDocumentWorker,validDocumentWorkerRequest} from './worker-protocol
 const exec=promisify(execFile),fail=code=>new Error(code);
 async function deadline(promise,ms,code){let timer;try{return await Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(fail(code)),ms);})]);}finally{clearTimeout(timer);}}
 
+export function assertSafeDocumentWorkerPath(workerPath){
+ if(typeof workerPath!=='string'||!isAbsolute(workerPath)||!workerPath.startsWith('/opt/localai/'))throw new TypeError('invalid_document_unit_configuration');
+ const worker=lstatSync(workerPath);if(!worker.isFile()||worker.uid!==0||(worker.mode&0o022)!==0)throw fail('unsafe_document_worker');
+ for(let parent=dirname(workerPath);parent!=='/';parent=dirname(parent)){const entry=lstatSync(parent);if(!entry.isDirectory()||entry.uid!==0||(entry.mode&0o022)!==0)throw fail('unsafe_document_worker');}
+}
+
 // Root-supervisor candidate. Caller supplies a root-owned, qualified worker
 // path; document requests never select an executable, unit or socket path.
 export async function runNativeDocumentUnit({request,signal,workerPath,timeoutMs=120000}){
  if(process.platform!=='linux'||process.getuid?.()!==0)throw fail('native_supervisor_required');
  if(typeof workerPath!=='string'||!isAbsolute(workerPath)||!workerPath.startsWith('/opt/localai/')||!Number.isSafeInteger(timeoutMs)||timeoutMs<100||timeoutMs>120000||signal!==undefined&&!(signal instanceof AbortSignal))throw new TypeError('invalid_document_unit_configuration');
  if(!validDocumentWorkerRequest(request))throw new TypeError('invalid_document_worker_request');
- const worker=lstatSync(workerPath);if(!worker.isFile()||worker.uid!==0||(worker.mode&0o022)!==0)throw fail('unsafe_document_worker');
- for(let parent=dirname(workerPath);parent!=='/';parent=dirname(parent)){const entry=lstatSync(parent);if(!entry.isDirectory()||entry.uid!==0||(entry.mode&0o022)!==0)throw fail('unsafe_document_worker');}
+ assertSafeDocumentWorkerPath(workerPath);
  if(signal?.aborted)throw fail('document_cancelled');
  const runtime='localai-document-job-'+randomBytes(4).toString('hex'),unit=runtime+'.service',socketPath='/run/'+runtime+'/worker.sock';
  const args=['--wait','--collect','--pipe','--unit='+unit,'-p','Slice=localai-ai.slice','-p','DynamicUser=yes','-p','RuntimeDirectory='+runtime,'-p','RuntimeDirectoryMode=0700','-p','PrivateNetwork=yes','-p','PrivateDevices=yes','-p','PrivateTmp=yes','-p','ProtectHome=yes','-p','ProtectSystem=strict','-p','NoNewPrivileges=yes','-p','RestrictSUIDSGID=yes','-p','MemoryMax=512M','-p','MemorySwapMax=0','-p','CPUQuota=100%','-p','TasksMax=32','-p','RuntimeMaxSec=120','-p','InaccessiblePaths=/var/lib/localai /var/lib/localai-models /opt/localai/ai /etc/localai /run/credentials','-E','LOCALAI_DOCUMENT_SOCKET='+socketPath,'/opt/localai/node/bin/node',workerPath];
