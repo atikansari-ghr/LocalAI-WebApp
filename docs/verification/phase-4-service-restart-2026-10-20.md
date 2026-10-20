@@ -1,0 +1,9 @@
+# Phase 4 disposable service restart proof — 2026-10-20
+
+A root-only test on the disposable Debian 13 LXC installed a temporary `localai-document-supervisor-restart-proof.service` under `/run/systemd/system`, derived from the candidate unit with separate encrypted state, runtime socket and a deliberately slow synthetic worker. The test required `TARGET_TEST_LXC=disposable` and never changed `localai.service` or the production document unit.
+
+The service started, claimed an encrypted job and launched a transient document worker. The test sent SIGKILL only to the supervisor's main PID and observed that worker still active. Systemd restarted the supervisor; its startup recovery stopped the orphaned unit before marking the interrupted claim `failed` with `interrupted_after_restart`. The first and restarted main PIDs differed. It then stopped the proof service, removed its unit and synthetic state, reloaded systemd and confirmed no active document worker units. The enrolled gateway remained active with PID 19963, and `/var/lib/dpkg/status` matched its pre-OCR checksum.
+
+This proves a real systemd service restart against synthetic state and a candidate executable. It does not qualify activation of the fixed production unit, coordinated update/rollback, public document routes, OCR under sustained joint load or the whole Phase 4 release gate.
+
+Independent review found that a failed or timed-out `systemctl start` could leave an accepted service alive while the proof removed its state. Cleanup now treats any start attempt as potentially active, stops the proof unit and checks its state, PID and document-unit inventory before deleting files. A deliberate failure while a synthetic worker was active exited with the expected error; follow-up checks found no proof unit file, state directory or active document units, and the live gateway remained active. If quiescence cannot be confirmed, the script retains the synthetic state and reports cleanup failure.
