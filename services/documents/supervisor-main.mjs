@@ -4,13 +4,15 @@ import {initializeVault,openVault} from '../../packages/auth/crypto.mjs';
 import {openDocumentJobStore} from './jobs.mjs';
 import {createDocumentJobRunner} from './job-runner.mjs';
 import {assertSafeDocumentWorkerPath} from './native-runner.mjs';
+import {createDocumentSupervisorSocket} from './supervisor-socket.mjs';
 
 if(process.platform!=='linux'||process.getuid?.()!==0)throw new Error('native_supervisor_required');
 const proof=process.env.TARGET_TEST_LXC==='disposable';
-if(!proof&&(process.env.LOCALAI_DOCUMENT_PROOF_STATE_DIR||process.env.LOCALAI_DOCUMENT_PROOF_WORKER))throw new Error('invalid_document_supervisor_configuration');
+if(!proof&&(process.env.LOCALAI_DOCUMENT_PROOF_STATE_DIR||process.env.LOCALAI_DOCUMENT_PROOF_WORKER||process.env.LOCALAI_DOCUMENT_PROOF_SOCKET))throw new Error('invalid_document_supervisor_configuration');
 const stateDir=proof?process.env.LOCALAI_DOCUMENT_PROOF_STATE_DIR:'/var/lib/localai-documents';
 const workerPath=proof?process.env.LOCALAI_DOCUMENT_PROOF_WORKER:'/opt/localai/current/services/documents/workers/document-worker.mjs';
-if(typeof stateDir!=='string'||!isAbsolute(stateDir)||typeof workerPath!=='string'||!isAbsolute(workerPath)||!workerPath.startsWith('/opt/localai/'))throw new Error('invalid_document_supervisor_configuration');
+const socketPath=proof?process.env.LOCALAI_DOCUMENT_PROOF_SOCKET:'/run/localai-documents/document.sock';
+if(typeof stateDir!=='string'||!isAbsolute(stateDir)||typeof workerPath!=='string'||!isAbsolute(workerPath)||!workerPath.startsWith('/opt/localai/')||typeof socketPath!=='string'||!isAbsolute(socketPath))throw new Error('invalid_document_supervisor_configuration');
 assertSafeDocumentWorkerPath(workerPath);
 const state=lstatSync(stateDir);if(!state.isDirectory()||state.uid!==0||(state.mode&0o077)!==0)throw new Error('unsafe_document_state_directory');
 const keyPath=join(stateDir,'master.key'),dbPath=join(stateDir,'jobs.sqlite');
@@ -20,7 +22,8 @@ const vault=keyExists?openVault(keyPath):readdirSync(stateDir).length===0?initia
 if(!vault)throw new Error('document_state_recovery_required');
 const store=openDocumentJobStore(dbPath,{vault}),runner=createDocumentJobRunner({store,workerPath});
 let stopping=false,wake,stopPromise;
-const requestStop=()=>{if(stopping)return;stopping=true;wake?.();stopPromise=runner.stop();void stopPromise.catch(()=>{});};
+const socket=await createDocumentSupervisorSocket({socketPath,store,runner,isStopping:()=>stopping});
+const requestStop=()=>{if(stopping)return;stopping=true;socket.close();wake?.();stopPromise=runner.stop();void stopPromise.catch(()=>{});};
 process.on('SIGTERM',requestStop);process.on('SIGINT',requestStop);
 const pause=ms=>new Promise(resolve=>{const timer=setTimeout(()=>{wake=null;resolve();},ms);wake=()=>{clearTimeout(timer);wake=null;resolve();};if(stopping)wake();});
 try{
@@ -30,4 +33,4 @@ try{
   if(!stopping)await pause(500);
  }
  await (stopPromise??runner.stop());
-}finally{process.off('SIGTERM',requestStop);process.off('SIGINT',requestStop);store.close();}
+}finally{process.off('SIGTERM',requestStop);process.off('SIGINT',requestStop);if(!stopping)socket.close();store.close();}

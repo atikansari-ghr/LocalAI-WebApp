@@ -7,7 +7,7 @@ StartLimitBurst=3
 [Service]
 Type=exec
 User=root
-Group=root
+Group=localai
 WorkingDirectory=/opt/localai/current
 ExecStart=/opt/localai/node/bin/node /opt/localai/current/services/documents/supervisor-main.mjs
 Restart=on-failure
@@ -16,6 +16,8 @@ TimeoutStopSec=180
 UMask=0077
 StateDirectory=localai-documents
 StateDirectoryMode=0700
+RuntimeDirectory=localai-documents
+RuntimeDirectoryMode=0750
 PrivateNetwork=yes
 PrivateDevices=yes
 PrivateTmp=yes
