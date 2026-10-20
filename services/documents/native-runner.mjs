@@ -2,7 +2,7 @@ import {spawn,execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {randomBytes} from 'node:crypto';
 import {lstatSync} from 'node:fs';
-import {isAbsolute} from 'node:path';
+import {dirname,isAbsolute} from 'node:path';
 import {invokeDocumentWorker,validDocumentWorkerRequest} from './worker-protocol.mjs';
 
 const exec=promisify(execFile),fail=code=>new Error(code);
@@ -15,6 +15,7 @@ export async function runNativeDocumentUnit({request,signal,workerPath,timeoutMs
  if(typeof workerPath!=='string'||!isAbsolute(workerPath)||!workerPath.startsWith('/opt/localai/')||!Number.isSafeInteger(timeoutMs)||timeoutMs<100||timeoutMs>120000||signal!==undefined&&!(signal instanceof AbortSignal))throw new TypeError('invalid_document_unit_configuration');
  if(!validDocumentWorkerRequest(request))throw new TypeError('invalid_document_worker_request');
  const worker=lstatSync(workerPath);if(!worker.isFile()||worker.uid!==0||(worker.mode&0o022)!==0)throw fail('unsafe_document_worker');
+ for(let parent=dirname(workerPath);parent!=='/';parent=dirname(parent)){const entry=lstatSync(parent);if(!entry.isDirectory()||entry.uid!==0||(entry.mode&0o022)!==0)throw fail('unsafe_document_worker');}
  if(signal?.aborted)throw fail('document_cancelled');
  const runtime='localai-document-job-'+randomBytes(4).toString('hex'),unit=runtime+'.service',socketPath='/run/'+runtime+'/worker.sock';
  const args=['--wait','--collect','--pipe','--unit='+unit,'-p','Slice=localai-ai.slice','-p','DynamicUser=yes','-p','RuntimeDirectory='+runtime,'-p','RuntimeDirectoryMode=0700','-p','PrivateNetwork=yes','-p','PrivateDevices=yes','-p','PrivateTmp=yes','-p','ProtectHome=yes','-p','ProtectSystem=strict','-p','NoNewPrivileges=yes','-p','RestrictSUIDSGID=yes','-p','MemoryMax=512M','-p','MemorySwapMax=0','-p','CPUQuota=100%','-p','TasksMax=32','-p','RuntimeMaxSec=120','-p','InaccessiblePaths=/var/lib/localai /var/lib/localai-models /opt/localai/ai /etc/localai /run/credentials','-E','LOCALAI_DOCUMENT_SOCKET='+socketPath,'/opt/localai/node/bin/node',workerPath];
