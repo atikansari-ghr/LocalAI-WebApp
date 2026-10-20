@@ -1,7 +1,7 @@
-import {createDocumentProcessor} from '../parsers.mjs';
+import {loadDocumentCohortProcessor} from '../cohort.mjs';
 import {startDocumentWorker} from '../worker-server.mjs';
 
-const processDocument=createDocumentProcessor();
+const processDocument=loadDocumentCohortProcessor('/opt/localai/documents/cohort.json');
 try{
  const worker=await startDocumentWorker({socketPath:process.env.LOCALAI_DOCUMENT_SOCKET,processor:async(request,signal)=>{
   if(request.kind!=='extract')throw new Error('document_worker_invalid_frame');
