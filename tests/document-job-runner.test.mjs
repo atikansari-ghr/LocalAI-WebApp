@@ -67,3 +67,24 @@ test('Stop during startup recovery cannot claim or launch a job',async()=>{
  const step=runner.step();await started;const stopped=runner.stop();release();
  await assert.rejects(step,/document_runner_stopping/);await stopped;assert.equal(claims,0);assert.equal(launches,0);
 });
+test('Preparation recovers interrupted work without claiming before resource admission',async()=>{
+ let recovered=0,claimed=0;const store={recoverInterrupted:()=>{recovered++;},claim:()=>{claimed++;return null;},get:()=>null,complete:()=>{},fail:()=>{},finishCancellation:()=>{},cancel:()=>false};
+ const runner=createDocumentJobRunner({store,workerPath:'/opt/localai/worker.mjs',recover:async({onStopped})=>onStopped(),launch:async()=>assert.fail('unexpected launch')});
+ await runner.prepare();assert.equal(recovered,1);assert.equal(claimed,0);
+ assert.equal(await runner.step(),null);assert.equal(recovered,1);assert.equal(claimed,1);
+});
+test('External pressure abort cancels a claimed worker only after native cleanup',async()=>{
+ let status='running',begin;const started=new Promise(resolve=>{begin=resolve;}),job=claim('one'),controller=new AbortController();
+ const store={recoverInterrupted:()=>{},claim:()=>job,get:()=>({status}),complete:()=>assert.fail('unexpected completion'),fail:()=>assert.fail('unexpected failure'),finishCancellation:(_id,_token,proof)=>{assert.equal(proof.nativeCleanupConfirmed,true);status='cancelled';},cancel:()=>{status='cancelling';return true;}};
+ const runner=createDocumentJobRunner({store,workerPath:'/opt/localai/worker.mjs',recover:async({onStopped})=>onStopped(),launch:async({signal})=>{begin();return new Promise((_,reject)=>signal.addEventListener('abort',()=>reject(Object.assign(new Error('document_cancelled'),{cleanupConfirmed:true})),{once:true}));}});
+ const running=runner.step({signal:controller.signal});await started;controller.abort();
+ await assert.rejects(running,/document_cancelled/);assert.equal(status,'cancelled');
+});
+
+test('Abort before native launch recovers and settles the claim before returning',async()=>{
+ let status='running',recoveries=0;const job=claim('one'),controller=new AbortController();
+ const store={recoverInterrupted:({nativeCleanupConfirmed})=>{assert.equal(nativeCleanupConfirmed,true);recoveries++;if(status==='cancelling')status='cancelled';},claim:()=>job,get:()=>({status}),complete:()=>assert.fail('unexpected completion'),fail:()=>assert.fail('unexpected failure'),finishCancellation:()=>assert.fail('unexpected direct cancellation'),cancel:()=>{status='cancelling';return true;}};
+ const runner=createDocumentJobRunner({store,workerPath:'/opt/localai/worker.mjs',recover:async({onStopped})=>onStopped(),launch:async({signal})=>{controller.abort();assert.equal(signal.aborted,true);throw new Error('document_cancelled');}});
+ await assert.rejects(runner.step({signal:controller.signal}),/document_cancelled/);
+ assert.equal(recoveries,2);assert.equal(status,'cancelled');
+});
