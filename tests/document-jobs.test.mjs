@@ -104,3 +104,23 @@ test('A claim cannot finalize before native worker cleanup is confirmed',t=>{
  store.finishCancellation(second.id,cancelClaim.token,{nativeCleanupConfirmed:true});
  assert.equal(store.get(second.id,'app:one','private').status,'cancelled');store.close();
 });
+test('A stopped worker failure persists only for its live claim',t=>{
+ const f=fixture(t),store=openDocumentJobStore(f.path,{vault:f.vault,now:()=>1000});
+ const job=store.enqueue(submission()),claim=store.claim();
+ assert.throws(()=>store.fail(job.id,claim.token,'document_worker_failed'),/native_cleanup_required/);
+ assert.throws(()=>store.fail(job.id,'wrong','document_worker_failed',{nativeCleanupConfirmed:true}),/job_claim_invalid/);
+ assert.throws(()=>store.fail(job.id,claim.token,'private details: secret',{nativeCleanupConfirmed:true}),/job_error_invalid/);
+ assert.equal(store.get(job.id,'app:one','private').status,'running');
+ store.fail(job.id,claim.token,'document_worker_failed',{nativeCleanupConfirmed:true});
+ assert.deepEqual({status:store.get(job.id,'app:one','private').status,error:store.get(job.id,'app:one','private').errorCode},{status:'failed',error:'document_worker_failed'});
+ assert.throws(()=>store.complete(job.id,claim.token,{text:'late'},{nativeCleanupConfirmed:true}),/job_claim_invalid/);
+ store.close();const reopened=openDocumentJobStore(f.path,{vault:f.vault,now:()=>1001});
+ assert.equal(reopened.get(job.id,'app:one','private').errorCode,'document_worker_failed');reopened.close();
+});
+test('Cancellation cannot be overwritten by a late worker failure',t=>{
+ const f=fixture(t),store=openDocumentJobStore(f.path,{vault:f.vault,now:()=>1000}),job=store.enqueue(submission()),claim=store.claim();
+ store.cancel(job.id,'app:one','private');
+ assert.throws(()=>store.fail(job.id,claim.token,'document_worker_failed',{nativeCleanupConfirmed:true}),/job_claim_invalid/);
+ store.finishCancellation(job.id,claim.token,{nativeCleanupConfirmed:true});
+ assert.equal(store.get(job.id,'app:one','private').status,'cancelled');store.close();
+});
