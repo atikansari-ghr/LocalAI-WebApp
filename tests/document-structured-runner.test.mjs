@@ -46,3 +46,13 @@ test('invalid model evidence never completes a durable claim',async t=>{
  assert.equal(store.get(job.id,'user:one','private').status,'running');
  await assert.rejects(runner.step(),/structured_recovery_required/);
 });
+
+test('aborting an active model request retains the claim for explicit recovery',async t=>{
+ const {store}=fixture(t),job=store.enqueue(request()),abort=new AbortController();let started;
+ const ready=new Promise(resolve=>{started=resolve;});
+ const runner=createStructuredJobRunner({store,barrier:{isClear:()=>true},generateCandidate:({signal})=>{started();return new Promise((_,reject)=>signal.addEventListener('abort',()=>reject(new Error('model_cancelled')),{once:true}));}});
+ const task=runner.step({signal:abort.signal});await ready;abort.abort();
+ await assert.rejects(task,/model_cancelled/);
+ assert.equal(store.get(job.id,'user:one','private').status,'running');
+ await assert.rejects(runner.step(),/structured_recovery_required/);
+});

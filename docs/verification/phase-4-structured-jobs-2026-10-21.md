@@ -11,3 +11,5 @@ The source-only private runner now serializes claims. Its generator calls the ex
 At source `e33c32c`, Windows passed 279 tests with 40 Linux-only skips; a fresh Debian checkout passed 319/319, the real-model persistence proof and documentation checks passed, and both required GitHub CI jobs passed.
 
 There is no supervisor connection, HTTP route, installed service, cancellation or backup integration. The separate database requires coordinated backup, restore and deployment before activation. Full model quality and Phase 4 release gates remain open.
+
+An additional source test aborts an active generator, checks that its claim remains running and that the runner refuses another step until explicit recovery. A disposable native process-crash test now kills a child after it claims a synthetic encrypted job, reopens the queue, rejects an unconfirmed recovery and then records a visible interruption. This checks SQLite claim durability and late-replay blocking; the test's final recovery confirmation is injected and does not qualify the real offline lease-recovery procedure. The native run remains pending.
