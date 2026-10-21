@@ -9,7 +9,7 @@ await import('./tesseract-deb-provenance.mjs');
 const base='/opt/localai/ocr/candidates/tesseract-5.5.0';
 const archiveDirectory=join(base,'debs'),installed=join(base,'root');
 const archiveNames=readdirSync(archiveDirectory).filter(name=>name.endsWith('.deb')).sort();
-assert.equal(archiveNames.length,46);
+assert.equal(archiveNames.length,47);
 const scratch='/root',parent=lstatSync(scratch);
 assert.ok(parent.isDirectory()&&parent.uid===0&&(parent.mode&0o077)===0);
 const reconstructed=mkdtempSync(join(scratch,'localai-tesseract-payload-'));

@@ -29,6 +29,7 @@ for(const name of names){
 }
 assert.ok(checked.some(item=>item.package==='tesseract-ocr'&&item.version.startsWith('5.5.0')));
 assert.ok(checked.some(item=>item.package==='tesseract-ocr-eng')&&checked.some(item=>item.package==='tesseract-ocr-ara'));
+assert.ok(checked.some(item=>item.package==='libatomic1')&&checked.some(item=>item.package==='gcc-14-base'&&item.version==='14.2.0-19'));
 const target=new Set(checked.map(item=>[item.package,item.version,item.architecture,item.sha256].join('\0'))),found=new Set();
 const lists='/var/lib/apt/lists';
 for(let parent=lists;parent!=='/';parent=dirname(parent)){const state=lstatSync(parent);assert.ok(state.isDirectory()&&state.uid===0&&(state.mode&0o022)===0);}
