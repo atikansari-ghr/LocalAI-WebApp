@@ -25,10 +25,3 @@ export async function verifyOfflineSystemdUnits(readUnit,units=RECOVERY_UNITS){
 export function readSystemdUnit(unit){
  return execFileSync('/usr/bin/systemctl',['show',unit,'--no-pager',...keys.map(key=>'--property='+key)],{encoding:'utf8',timeout:5000,maxBuffer:4096});
 }
-
-// The update/recovery workflow must keep these four units masked for the
-// entire call. This function never stops or masks a live service itself.
-export async function recoverOfflineInteractiveLease(barrier){
- if(process.platform!=='linux'||process.getuid?.()!==0||!barrier||typeof barrier.recover!=='function')throw new TypeError('invalid_interactive_recovery');
- return barrier.recover(()=>verifyOfflineSystemdUnits(readSystemdUnit));
-}

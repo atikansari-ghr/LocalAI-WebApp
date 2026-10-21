@@ -5,7 +5,7 @@ import {execFileSync} from 'node:child_process';
 import {chmodSync,mkdtempSync,readFileSync,rmSync,unlinkSync,writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {createInteractiveLeaseBarrier} from '../../services/resources/interactive-lease-barrier.mjs';
-import {parseStoppedMaskedUnit,readSystemdUnit,recoverOfflineInteractiveLease,verifyOfflineSystemdUnits} from '../../services/resources/interactive-lease-recovery.mjs';
+import {parseStoppedMaskedUnit,readSystemdUnit,verifyOfflineSystemdUnits} from '../../services/resources/interactive-lease-recovery.mjs';
 import {createDocumentSupervisorScheduler} from '../../services/documents/supervisor-scheduler.mjs';
 
 assert.equal(process.env.TARGET_TEST_LXC,'disposable');assert.equal(process.getuid(),0);
@@ -31,7 +31,7 @@ try{
  barrier.begin();assert.equal(barrier.isClear(),false);
  await assert.rejects(barrier.recover(()=>verifyOfflineSystemdUnits(readSystemdUnit,units)),/interactive_recovery_required/);
  assert.equal(barrier.isClear(),false);
- await assert.rejects(recoverOfflineInteractiveLease(barrier),/interactive_recovery_required/);
+ await assert.rejects(barrier.recover(()=>verifyOfflineSystemdUnits(readSystemdUnit)),/interactive_recovery_required/);
  assert.equal(barrier.isClear(),false);
  systemctl('mask','--runtime','--now',...units);
  try{await barrier.recover(()=>verifyOfflineSystemdUnits(readSystemdUnit,units));}catch(error){process.stderr.write(JSON.stringify(units.map(unit=>({unit,state:readSystemdUnit(unit)})))+'\n');throw error;}assert.equal(barrier.isClear(),true);
