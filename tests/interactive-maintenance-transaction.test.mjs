@@ -5,6 +5,8 @@ import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {RECOVERY_UNITS} from '../services/resources/interactive-lease-recovery.mjs';
 import {beginInteractiveMaintenance,finishInteractiveMaintenance} from '../installer/interactive-maintenance-transaction.mjs';
+import {runInteractiveMaintenance} from '../installer/interactive-maintenance-operator.mjs';
+import {createInteractiveLeaseBarrier} from '../services/resources/interactive-lease-barrier.mjs';
 
 function fixture(){
  const root=mkdtempSync(join(tmpdir(),'localai-maintenance-flow-'));chmodSync(root,0o700);
@@ -64,6 +66,30 @@ test('A new begin restores an interrupted journal before capturing fresh states'
   assert.equal(f.calls.filter(call=>call.startsWith('restore:')).length,priorRestoreCount+RECOVERY_UNITS.length);
   assert.equal(f.calls.filter(call=>call==='verify-offline').length,2);
   await finishInteractiveMaintenance(f);
+  assert.equal(f.states[RECOVERY_UNITS[0]].active,true);
+ }finally{f.cleanup();}
+});
+
+test('Operator keeps claims blocked after marker removal until journaled restore succeeds',{skip:process.platform==='win32'},async()=>{
+ const f=fixture();try{
+  const barrier=createInteractiveLeaseBarrier({path:join(f.root,'journal','interactive.lock'),journalPath:f.journal});
+  barrier.begin();f.setFailRestore(true);
+  await assert.rejects(runInteractiveMaintenance({...f,barrier}),/restore_failed/);
+  assert.equal(existsSync(f.journal),true);assert.equal(barrier.isClear(),false);
+  f.setFailRestore(false);
+  assert.deepEqual(await runInteractiveMaintenance({...f,barrier}),{restored:true,recovered:false});
+  assert.equal(existsSync(f.journal),false);assert.equal(barrier.isClear(),true);
+  assert.equal(f.states[RECOVERY_UNITS[0]].active,true);
+ }finally{f.cleanup();}
+});
+
+test('Operator clears a marker only inside a verified offline window',{skip:process.platform==='win32'},async()=>{
+ const f=fixture();try{
+  const barrier=createInteractiveLeaseBarrier({path:join(f.root,'journal','interactive.lock'),journalPath:f.journal});
+  barrier.begin();
+  assert.deepEqual(await runInteractiveMaintenance({...f,barrier}),{restored:true,recovered:true});
+  assert.equal(barrier.isClear(),true);assert.equal(existsSync(f.journal),false);
+  assert.equal(f.calls.filter(call=>call==='verify-offline').length,2);
   assert.equal(f.states[RECOVERY_UNITS[0]].active,true);
  }finally{f.cleanup();}
 });

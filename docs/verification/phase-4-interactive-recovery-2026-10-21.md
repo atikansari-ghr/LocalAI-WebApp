@@ -30,4 +30,6 @@ The supervisor candidate now also treats a pending `maintenance.json` in its pri
 
 The updated native synthetic transaction also cleared its separate lease marker only while all four proof units were effectively masked and offline. The still-present maintenance journal kept the barrier closed through service restoration; it opened only after the restored state was verified and the journal removed. All disposable units were cleaned up, with the live PIDs and package inventory unchanged.
 
+An injected-control operator candidate now sequences existing-journal restoration, a fresh offline window, marker recovery under that window, and final service restoration. A Debian regression forces the first post-marker service restore to fail: the journal stays in place and keeps document claims blocked, and the next operator call completes the restore without repeating marker recovery. This module has no root command or lock acquisition yet. It is not callable by users on the live installation and does not make production recovery available.
+
 At source `d5c2d01` before these review fixes, the full Windows suite passed 267 tests with 32 platform skips, Debian passed 299/299, documentation checks passed, and both required CI jobs passed. The current review fixes require a fresh full-suite and CI run before they may be counted as a passed checkpoint.
