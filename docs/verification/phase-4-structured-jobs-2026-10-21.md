@@ -1,0 +1,7 @@
+# Phase 4 private structured-job store candidate — 2026-10-21
+
+A separate encrypted SQLite WAL candidate now persists structured-extraction requests and reviewed results. It validates the data-only schema and parser/OCR source units before enqueue, binds idempotency to the owner and exact request, and keeps document text, schema and result behind a per-job envelope key. Existing foreign database files are rejected before mutation. A claim token prevents a stale model response from completing a job after interruption; recovery requires an explicit confirmed interactive-recovery proof and records an interrupted job as failed rather than replaying an uncertain inference call.
+
+The initial focused test failed because the module was absent, then passed after implementation. The tests reopen the database, check owner/scope isolation, inspect on-disk database and WAL bytes for private text, reject changed requests under the same idempotency key, reject incompatible databases, and deny late completion after interrupted-claim recovery.
+
+This is an internal store only. It has no model runner, supervisor connection, HTTP route, installed service, cancellation or backup integration. An arbitrary trusted internal caller can currently pass a review-shaped result to `complete`; the later runner must ensure only `runStructuredExtractionCandidate` output reaches that method. The separate database requires coordinated backup, restore and deployment before activation. Full model quality and Phase 4 release gates remain open.
