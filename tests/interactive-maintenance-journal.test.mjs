@@ -99,3 +99,10 @@ test('Restore refuses an unexpected mask target and retains the journal',{skip:p
   assert.equal(lstatSync(f.journal).isFile(),true);
  }finally{f.cleanup();}
 });
+
+test('Maintenance journal refuses caller-directed unit names outside the disposable target',()=>{
+ const f=fixture();try{
+  const units=['gateway','chat','embedding','supervisor'].map(role=>`localai-recovery-12345678-${role}.service`);
+  assert.throws(()=>prepareInteractiveMaintenanceJournal({journal:f.journal,unitDirectory:f.unitDirectory,units,serviceStates:f.serviceStates}),/invalid_interactive_maintenance_units/);
+ }finally{f.cleanup();}
+});

@@ -5,6 +5,14 @@ import {RECOVERY_UNITS} from '../services/resources/interactive-lease-recovery.m
 
 const fail=code=>new Error(code);
 const own=()=>process.getuid?.();
+function selectedUnits(units){
+ if(units===undefined)return RECOVERY_UNITS;
+ if(!Array.isArray(units)||units.length!==4||units.some(unit=>typeof unit!=='string'))throw fail('invalid_interactive_maintenance_units');
+ if(units.every((unit,index)=>unit===RECOVERY_UNITS[index]))return RECOVERY_UNITS;
+ const match=/^localai-recovery-([0-9a-f]{8})-gateway\.service$/.exec(units[0]);
+ if(process.env.TARGET_TEST_LXC!=='disposable'||process.platform!=='linux'||own()!==0||!match||units.some((unit,index)=>unit!==`localai-recovery-${match[1]}-${['gateway','chat','embedding','supervisor'][index]}.service`))throw fail('invalid_interactive_maintenance_units');
+ return Object.freeze([...units]);
+}
 function safeDirectory(path,{privateDirectory=false}={}){
  if(typeof path!=='string'||!isAbsolute(path)||resolve(path)!==path||own()===undefined)throw fail('unsafe_interactive_maintenance_journal_directory');
  const state=lstatSync(path);
@@ -27,31 +35,32 @@ function snapshot(path){
  }catch(error){if(error?.code==='ENOENT')return null;throw fail('unsafe_interactive_maintenance_unit');}
  finally{if(fd!==undefined)closeSync(fd);}
 }
-function validServices(serviceStates,files){
- if(!serviceStates||typeof serviceStates!=='object'||Object.keys(serviceStates).sort().join(',')!==[...RECOVERY_UNITS].sort().join(','))throw fail('unsafe_interactive_maintenance_service_state');
- for(let index=0;index<RECOVERY_UNITS.length;index++){
-  const state=serviceStates[RECOVERY_UNITS[index]];
+function validServices(serviceStates,files,units){
+ if(!serviceStates||typeof serviceStates!=='object'||Object.keys(serviceStates).sort().join(',')!==[...units].sort().join(','))throw fail('unsafe_interactive_maintenance_service_state');
+ for(let index=0;index<units.length;index++){
+  const state=serviceStates[units[index]];
   if(!state||Object.keys(state).sort().join(',')!=='active,available,enabled'||Object.values(state).some(value=>typeof value!=='boolean')||state.available!==Boolean(files[index].previous)||!state.available&&(state.active||state.enabled))throw fail('unsafe_interactive_maintenance_service_state');
  }
  return serviceStates;
 }
-function validRecord(record,unitDirectory){
- if(!record||Object.keys(record).sort().join(',')!=='createdAt,files,schemaVersion,services,unitDirectory'||record.schemaVersion!==2||record.unitDirectory!==unitDirectory||typeof record.createdAt!=='string'||!Number.isFinite(Date.parse(record.createdAt))||!Array.isArray(record.files)||record.files.length!==RECOVERY_UNITS.length)throw fail('unsafe_interactive_maintenance_journal');
- for(let index=0;index<RECOVERY_UNITS.length;index++){
-  const file=record.files[index];if(!file||Object.keys(file).sort().join(',')!=='previous,unit'||file.unit!==RECOVERY_UNITS[index])throw fail('unsafe_interactive_maintenance_journal');
+function validRecord(record,unitDirectory,units){
+ if(!record||Object.keys(record).sort().join(',')!=='createdAt,files,schemaVersion,services,unitDirectory'||record.schemaVersion!==2||record.unitDirectory!==unitDirectory||typeof record.createdAt!=='string'||!Number.isFinite(Date.parse(record.createdAt))||!Array.isArray(record.files)||record.files.length!==units.length)throw fail('unsafe_interactive_maintenance_journal');
+ for(let index=0;index<units.length;index++){
+  const file=record.files[index];if(!file||Object.keys(file).sort().join(',')!=='previous,unit'||file.unit!==units[index])throw fail('unsafe_interactive_maintenance_journal');
   const previous=file.previous;if(previous===null)continue;
   if(!previous||Object.keys(previous).sort().join(',')!=='data,gid,mode,uid'||typeof previous.data!=='string'||previous.data.length>1400000||Buffer.from(previous.data,'base64').toString('base64')!==previous.data||![previous.mode,previous.uid,previous.gid].every(value=>Number.isSafeInteger(value)&&value>=0)||previous.mode>0o777||(previous.mode&0o022)!==0)throw fail('unsafe_interactive_maintenance_journal');
  }
- validServices(record.services,record.files);
+ validServices(record.services,record.files,units);
  return record;
 }
 
-export function prepareInteractiveMaintenanceJournal({journal,unitDirectory,serviceStates}){
+export function prepareInteractiveMaintenanceJournal({journal,unitDirectory,serviceStates,units}){
+ units=selectedUnits(units);
  safeJournalLocation(journal);safeDirectory(unitDirectory);
  try{lstatSync(journal);throw fail('interactive_maintenance_journal_exists');}catch(error){if(error?.code!=='ENOENT')throw error;}
- const files=RECOVERY_UNITS.map(unit=>({unit,previous:snapshot(join(unitDirectory,unit))}));
- const services=validServices(serviceStates,files);
- const record=validRecord({schemaVersion:2,createdAt:new Date().toISOString(),unitDirectory,files,services},unitDirectory);
+ const files=units.map(unit=>({unit,previous:snapshot(join(unitDirectory,unit))}));
+ const services=validServices(serviceStates,files,units);
+ const record=validRecord({schemaVersion:2,createdAt:new Date().toISOString(),unitDirectory,files,services},unitDirectory,units);
  const temporary=join(dirname(journal),'.maintenance-'+randomUUID());let fd;
  try{
   fd=openSync(temporary,'wx',0o600);writeFileSync(fd,JSON.stringify(record));fchmodSync(fd,0o600);fsyncSync(fd);closeSync(fd);fd=undefined;
@@ -60,13 +69,14 @@ export function prepareInteractiveMaintenanceJournal({journal,unitDirectory,serv
  return record;
 }
 
-export function readInteractiveMaintenanceJournal({journal,unitDirectory}){
+export function readInteractiveMaintenanceJournal({journal,unitDirectory,units}){
+ units=selectedUnits(units);
  safeJournalLocation(journal);safeDirectory(unitDirectory);
  let fd;
  try{
   fd=openSync(journal,constants.O_RDONLY|constants.O_NOFOLLOW);const state=fstatSync(fd);
   if(!state.isFile()||state.nlink!==1||state.uid!==own()||(state.mode&0o077)!==0||state.size>8*1024**2)throw fail('unsafe_interactive_maintenance_journal');
-  return validRecord(JSON.parse(readFileSync(fd,'utf8')),unitDirectory);
+  return validRecord(JSON.parse(readFileSync(fd,'utf8')),unitDirectory,units);
  }catch{throw fail('unsafe_interactive_maintenance_journal');}
  finally{if(fd!==undefined)closeSync(fd);}
 }
@@ -88,8 +98,8 @@ function installMask(path,hadOriginal){
  try{symlinkSync('/dev/null',temporary);renameSync(temporary,path);syncDirectory(dirname(path));}
  finally{try{unlinkSync(temporary);}catch(error){if(error?.code!=='ENOENT')throw error;}}
 }
-export function applyInteractiveUnitMasks({journal,unitDirectory}){
- const record=readInteractiveMaintenanceJournal({journal,unitDirectory});
+export function applyInteractiveUnitMasks({journal,unitDirectory,units}){
+ const record=readInteractiveMaintenanceJournal({journal,unitDirectory,units});
  for(const file of record.files){const state=currentState(join(unitDirectory,file.unit),file.previous);if(state!==(file.previous?'original':'missing'))throw fail('interactive_maintenance_unit_changed');}
  for(const file of record.files)installMask(join(unitDirectory,file.unit),file.previous!==null);
  return record;
@@ -102,8 +112,8 @@ function restoreFile(path,previous){
   renameSync(temporary,path);syncDirectory(dirname(path));
  }finally{if(fd!==undefined)closeSync(fd);try{unlinkSync(temporary);}catch(error){if(error?.code!=='ENOENT')throw error;}}
 }
-export function restoreInteractiveUnitFiles({journal,unitDirectory}){
- const record=readInteractiveMaintenanceJournal({journal,unitDirectory});
+export function restoreInteractiveUnitFiles({journal,unitDirectory,units}){
+ const record=readInteractiveMaintenanceJournal({journal,unitDirectory,units});
  const states=record.files.map(file=>currentState(join(unitDirectory,file.unit),file.previous));
  for(let index=0;index<record.files.length;index++){
   const file=record.files[index],state=states[index];
