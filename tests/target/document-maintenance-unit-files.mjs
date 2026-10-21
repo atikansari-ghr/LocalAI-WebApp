@@ -20,7 +20,7 @@ const units=['gateway','chat','embedding','supervisor'].map(role=>`localai-recov
 const paths=units.map(unit=>join('/etc/systemd/system',unit));
 const directory=mkdtempSync('/root/localai-maintenance-proof-');chmodSync(directory,0o700);
 const journal=join(directory,'maintenance.json');let created=0;
-const barrier=createInteractiveLeaseBarrier({path:join(directory,'interactive.lock')});let markerToken;
+const barrier=createInteractiveLeaseBarrier({path:join(directory,'interactive.lock'),journalPath:journal});let markerToken;
 const source='[Unit]\nDescription=Disposable Local AI maintenance proof\n[Service]\nType=simple\nExecStart=/bin/sleep infinity\nRestart=no\nRuntimeMaxSec=30\nNoNewPrivileges=yes\nPrivateNetwork=yes\nProtectSystem=strict\n[Install]\nWantedBy=multi-user.target\n';
 const capture=unit=>{
  const fields=Object.fromEntries(systemctl('show',unit,'--property=LoadState','--property=ActiveState','--property=UnitFileState','--no-pager').trim().split('\n').map(line=>{const at=line.indexOf('=');return [line.slice(0,at),line.slice(at+1)];}));
@@ -46,9 +46,15 @@ try{
   await finishInteractiveMaintenance(options);
   assert.equal(existsSync(journal),false);assert.equal(barrier.isClear(),false);
  }
+ await beginInteractiveMaintenance(options);
+ await barrier.recover(async()=>{await verifyOfflineSystemdUnits(readSystemdUnit,units);await verifyOfflineDocumentWorkers(readDocumentWorkerInventory);return true;});
+ assert.equal(existsSync(join(directory,'interactive.lock')),false);
+ assert.equal(barrier.isClear(),false);
+ await finishInteractiveMaintenance(options);
+ assert.equal(barrier.isClear(),true);
  for(const path of paths)assert.equal(readFileSync(path,'utf8'),source);
  assert.equal(pid('localai.service'),baseline.gateway);assert.equal(pid('localai-chat.service'),baseline.chat);assert.equal(pid('localai-embedding.service'),baseline.embedding);assert.equal(packageDigest(),baseline.packages);
- process.stdout.write(JSON.stringify({gate:'native-etc-maintenance-transaction',effectiveMasks:true,priorServiceStatesRestored:true,crashJournalRecovered:true,restoreCrashRecovered:true,exactFilesRestored:true,markerRetained:true,realGatewayAndWorkersUnchanged:true,packageInventoryUnchanged:true,activated:false})+'\n');
+ process.stdout.write(JSON.stringify({gate:'native-etc-maintenance-transaction',effectiveMasks:true,priorServiceStatesRestored:true,crashJournalRecovered:true,restoreCrashRecovered:true,exactFilesRestored:true,journalBlocksUntilRestore:true,realGatewayAndWorkersUnchanged:true,packageInventoryUnchanged:true,activated:false})+'\n');
 }finally{
  if(existsSync(journal))await finishInteractiveMaintenance(options);
  for(const unit of units)try{systemctl('stop',unit);}catch{}
