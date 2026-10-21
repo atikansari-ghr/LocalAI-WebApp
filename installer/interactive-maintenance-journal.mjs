@@ -1,5 +1,5 @@
 import {randomUUID} from 'node:crypto';
-import {constants,closeSync,existsSync,fchmodSync,fstatSync,fsyncSync,linkSync,lstatSync,openSync,readFileSync,unlinkSync,writeFileSync} from 'node:fs';
+import {constants,closeSync,existsSync,fchmodSync,fchownSync,fstatSync,fsyncSync,linkSync,lstatSync,openSync,readFileSync,readlinkSync,renameSync,symlinkSync,unlinkSync,writeFileSync} from 'node:fs';
 import {basename,dirname,isAbsolute,join,resolve} from 'node:path';
 import {RECOVERY_UNITS} from '../services/resources/interactive-lease-recovery.mjs';
 
@@ -69,4 +69,46 @@ export function readInteractiveMaintenanceJournal({journal,unitDirectory}){
   return validRecord(JSON.parse(readFileSync(fd,'utf8')),unitDirectory);
  }catch{throw fail('unsafe_interactive_maintenance_journal');}
  finally{if(fd!==undefined)closeSync(fd);}
+}
+
+function currentState(path,previous){
+ let state;try{state=lstatSync(path);}catch(error){if(error?.code==='ENOENT')return 'missing';throw fail('interactive_maintenance_unit_changed');}
+ if(state.isSymbolicLink()){
+  if(state.uid===own()&&state.nlink===1&&readlinkSync(path)==='/dev/null')return 'masked';
+  throw fail('interactive_maintenance_unit_changed');
+ }
+ if(previous===null)throw fail('interactive_maintenance_unit_changed');
+ let observed;try{observed=snapshot(path);}catch{throw fail('interactive_maintenance_unit_changed');}
+ if(!observed||observed.data!==previous.data||observed.mode!==previous.mode||observed.uid!==previous.uid||observed.gid!==previous.gid)throw fail('interactive_maintenance_unit_changed');
+ return 'original';
+}
+function installMask(path,hadOriginal){
+ if(!hadOriginal){symlinkSync('/dev/null',path);syncDirectory(dirname(path));return;}
+ const temporary=join(dirname(path),'.'+basename(path)+'.mask-'+randomUUID());
+ try{symlinkSync('/dev/null',temporary);renameSync(temporary,path);syncDirectory(dirname(path));}
+ finally{try{unlinkSync(temporary);}catch(error){if(error?.code!=='ENOENT')throw error;}}
+}
+export function applyInteractiveUnitMasks({journal,unitDirectory}){
+ const record=readInteractiveMaintenanceJournal({journal,unitDirectory});
+ for(const file of record.files){const state=currentState(join(unitDirectory,file.unit),file.previous);if(state!==(file.previous?'original':'missing'))throw fail('interactive_maintenance_unit_changed');}
+ for(const file of record.files)installMask(join(unitDirectory,file.unit),file.previous!==null);
+ return record;
+}
+function restoreFile(path,previous){
+ if(previous===null){unlinkSync(path);syncDirectory(dirname(path));return;}
+ const temporary=join(dirname(path),'.'+basename(path)+'.restore-'+randomUUID());let fd;
+ try{
+  fd=openSync(temporary,'wx',previous.mode);writeFileSync(fd,Buffer.from(previous.data,'base64'));fchmodSync(fd,previous.mode);fchownSync(fd,previous.uid,previous.gid);fsyncSync(fd);closeSync(fd);fd=undefined;
+  renameSync(temporary,path);syncDirectory(dirname(path));
+ }finally{if(fd!==undefined)closeSync(fd);try{unlinkSync(temporary);}catch(error){if(error?.code!=='ENOENT')throw error;}}
+}
+export function restoreInteractiveUnitFiles({journal,unitDirectory}){
+ const record=readInteractiveMaintenanceJournal({journal,unitDirectory});
+ const states=record.files.map(file=>currentState(join(unitDirectory,file.unit),file.previous));
+ for(let index=0;index<record.files.length;index++){
+  const file=record.files[index],state=states[index];
+  if(file.previous===null&&state!=='missing'&&state!=='masked'||file.previous!==null&&state!=='original'&&state!=='masked')throw fail('interactive_maintenance_unit_changed');
+ }
+ for(let index=0;index<record.files.length;index++)if(states[index]==='masked')restoreFile(join(unitDirectory,record.files[index].unit),record.files[index].previous);
+ return record;
 }

@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync,mkdirSync,readFileSync,writeFileSync,chmodSync,symlinkSync,lstatSync,rmSync} from 'node:fs';
+import {mkdtempSync,mkdirSync,readFileSync,readlinkSync,writeFileSync,chmodSync,symlinkSync,lstatSync,rmSync} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {RECOVERY_UNITS} from '../services/resources/interactive-lease-recovery.mjs';
-import {prepareInteractiveMaintenanceJournal,readInteractiveMaintenanceJournal} from '../installer/interactive-maintenance-journal.mjs';
+import {applyInteractiveUnitMasks,prepareInteractiveMaintenanceJournal,readInteractiveMaintenanceJournal,restoreInteractiveUnitFiles} from '../installer/interactive-maintenance-journal.mjs';
 
 const fixture=()=>{
  const root=mkdtempSync(join(tmpdir(),'localai-maintenance-'));chmodSync(root,0o700);
@@ -64,5 +64,38 @@ test('Maintenance journal reader rejects a changed service-state record',{skip:p
   const record=JSON.parse(readFileSync(f.journal,'utf8'));record.services[RECOVERY_UNITS[0]].active='yes';
   writeFileSync(f.journal,JSON.stringify(record));
   assert.throws(()=>readInteractiveMaintenanceJournal({journal:f.journal,unitDirectory:f.unitDirectory}),/unsafe_interactive_maintenance_journal/);
+ }finally{f.cleanup();}
+});
+
+test('Journaled unit masks replace only captured files and restore exact bytes and modes',{skip:process.platform==='win32'},()=>{
+ const f=fixture();try{
+  prepareInteractiveMaintenanceJournal({journal:f.journal,unitDirectory:f.unitDirectory,serviceStates:f.serviceStates});
+  applyInteractiveUnitMasks({journal:f.journal,unitDirectory:f.unitDirectory});
+  for(const unit of RECOVERY_UNITS){const path=join(f.unitDirectory,unit);assert.equal(lstatSync(path).isSymbolicLink(),true);assert.equal(readlinkSync(path),'/dev/null');}
+  restoreInteractiveUnitFiles({journal:f.journal,unitDirectory:f.unitDirectory});
+  for(const unit of RECOVERY_UNITS.slice(0,3)){const path=join(f.unitDirectory,unit);assert.equal(readFileSync(path,'utf8'),'[Service]\nExecStart=/bin/true\n');assert.equal(lstatSync(path).mode&0o777,0o644);}
+  assert.throws(()=>lstatSync(join(f.unitDirectory,RECOVERY_UNITS[3])),{code:'ENOENT'});
+  assert.equal(lstatSync(f.journal).isFile(),true);
+  restoreInteractiveUnitFiles({journal:f.journal,unitDirectory:f.unitDirectory});
+ }finally{f.cleanup();}
+});
+
+test('Unit masking refuses changed source bytes before replacing any unit',{skip:process.platform==='win32'},()=>{
+ const f=fixture();try{
+  prepareInteractiveMaintenanceJournal({journal:f.journal,unitDirectory:f.unitDirectory,serviceStates:f.serviceStates});
+  writeFileSync(join(f.unitDirectory,RECOVERY_UNITS[1]),'changed');
+  assert.throws(()=>applyInteractiveUnitMasks({journal:f.journal,unitDirectory:f.unitDirectory}),/interactive_maintenance_unit_changed/);
+  assert.equal(lstatSync(join(f.unitDirectory,RECOVERY_UNITS[0])).isFile(),true);
+ }finally{f.cleanup();}
+});
+
+test('Restore refuses an unexpected mask target and retains the journal',{skip:process.platform==='win32'},()=>{
+ const f=fixture();try{
+  prepareInteractiveMaintenanceJournal({journal:f.journal,unitDirectory:f.unitDirectory,serviceStates:f.serviceStates});
+  applyInteractiveUnitMasks({journal:f.journal,unitDirectory:f.unitDirectory});
+  const path=join(f.unitDirectory,RECOVERY_UNITS[1]);rmSync(path);symlinkSync('/bin/true',path);
+  assert.throws(()=>restoreInteractiveUnitFiles({journal:f.journal,unitDirectory:f.unitDirectory}),/interactive_maintenance_unit_changed/);
+  assert.equal(readlinkSync(join(f.unitDirectory,RECOVERY_UNITS[0])),'/dev/null');
+  assert.equal(lstatSync(f.journal).isFile(),true);
  }finally{f.cleanup();}
 });
