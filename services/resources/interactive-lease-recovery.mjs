@@ -25,3 +25,16 @@ export async function verifyOfflineSystemdUnits(readUnit,units=RECOVERY_UNITS){
 export function readSystemdUnit(unit){
  return execFileSync('/usr/bin/systemctl',['show',unit,'--no-pager',...keys.map(key=>'--property='+key)],{encoding:'utf8',timeout:5000,maxBuffer:4096});
 }
+
+export function readDocumentWorkerInventory(){
+ return execFileSync('/usr/bin/systemctl',['list-units','--all','--type=service','--output=json','--no-pager','localai-document-job-*.service'],{encoding:'utf8',timeout:5000,maxBuffer:65536});
+}
+
+export async function verifyOfflineDocumentWorkers(readInventory){
+ if(typeof readInventory!=='function')throw new TypeError('invalid_interactive_recovery_inventory');
+ try{for(let pass=0;pass<2;pass++){
+  const text=await readInventory();if(typeof text!=='string'||text.length>65536)throw blocked();
+  const units=JSON.parse(text);if(!Array.isArray(units)||units.length!==0)throw blocked();
+ }}catch{throw blocked();}
+ return true;
+}
