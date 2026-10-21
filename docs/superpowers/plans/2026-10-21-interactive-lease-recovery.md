@@ -31,18 +31,18 @@
 
 **Files:** `services/resources/interactive-lease-barrier.mjs`, `tests/interactive-lease-barrier.test.mjs`.
 
-- [ ] Add a failing test: recovery with a rejected verifier leaves the marker and scheduler block intact.
-- [ ] Add a failing test: a valid offline proof clears the same protected marker durably; wrong-token or inode replacement fails closed.
-- [ ] Implement the minimal async recovery method, with callback proof while marker exists, protected descriptor checks and directory sync after unlink.
-- [ ] Run focused tests on Windows and Debian; commit the primitive.
+- [x] Add a failing test: recovery with a rejected verifier leaves the marker and scheduler block intact.
+- [x] Add a failing test: a valid offline proof clears the same protected marker durably; wrong-token or inode replacement fails closed.
+- [x] Implement the minimal async recovery method, with callback proof while marker exists, protected descriptor checks and directory sync after unlink.
+- [x] Run focused tests on Windows and Debian; commit the primitive.
 
 ### Task 2: Fixed systemd offline proof
 
 **Files:** `services/resources/interactive-lease-recovery.mjs`, `tests/interactive-lease-recovery.test.mjs`.
 
-- [ ] Add failing tests for unmasked, active, lingering-PID/control-group, missing and malformed unit states.
-- [ ] Add a passing case requiring four fixed units masked and inactive with zero PIDs and no control group.
-- [ ] Implement a bounded `systemctl show` parser and twice-check proof, with a target-only synthetic override gated by `TARGET_TEST_LXC=disposable`.
+- [x] Add failing tests for unmasked, active, lingering-PID/control-group, missing and malformed unit states.
+- [x] Add a passing case requiring four fixed units masked and inactive with zero PIDs and no control group.
+- [x] Implement a bounded `systemctl show` parser and twice-check proof; the native proof uses explicit synthetic units only when `TARGET_TEST_LXC=disposable`.
 - [ ] Run focused and full tests; commit the verifier.
 
 ### Task 3: Native synthetic recovery and evidence
