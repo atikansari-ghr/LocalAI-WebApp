@@ -31,8 +31,8 @@ try{
  systemctl('daemon-reload');systemctl('enable',units[0],units[1]);systemctl('start',units[0],units[1]);
  assert.equal(capture(units[0]).active,true);assert.equal(capture(units[0]).enabled,true);
  markerToken=barrier.begin();
- execFileSync('/usr/bin/systemd-run',['--unit='+workerUnit,'--collect','--property=PrivateNetwork=yes','--property=MemoryMax=64M','--property=MemorySwapMax=0','--property=RuntimeMaxSec=30','/bin/sleep','infinity'],{encoding:'utf8',timeout:20000});
  workerMayRun=true;
+ execFileSync('/usr/bin/systemd-run',['--unit='+workerUnit,'--collect','--property=PrivateNetwork=yes','--property=MemoryMax=64M','--property=MemorySwapMax=0','--property=RuntimeMaxSec=30','/bin/sleep','infinity'],{encoding:'utf8',timeout:20000});
  assert.ok(Number(pid(workerUnit))>0);
  await beginInteractiveMaintenance(options);
  assert.equal(JSON.parse(readDocumentWorkerInventory()).some(row=>row.unit===workerUnit),false);
