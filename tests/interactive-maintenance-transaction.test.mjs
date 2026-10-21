@@ -1,0 +1,56 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {chmodSync,existsSync,lstatSync,mkdirSync,mkdtempSync,readFileSync,readlinkSync,rmSync,writeFileSync} from 'node:fs';
+import {join} from 'node:path';
+import {tmpdir} from 'node:os';
+import {RECOVERY_UNITS} from '../services/resources/interactive-lease-recovery.mjs';
+import {beginInteractiveMaintenance,finishInteractiveMaintenance} from '../installer/interactive-maintenance-transaction.mjs';
+
+function fixture(){
+ const root=mkdtempSync(join(tmpdir(),'localai-maintenance-flow-'));chmodSync(root,0o700);
+ const unitDirectory=join(root,'units'),journalDirectory=join(root,'journal');mkdirSync(unitDirectory,{mode:0o755});mkdirSync(journalDirectory,{mode:0o700});
+ for(const unit of RECOVERY_UNITS.slice(0,3))writeFileSync(join(unitDirectory,unit),'[Service]\nExecStart=/bin/true\n',{mode:0o644});
+ const journal=join(journalDirectory,'maintenance.json'),states=Object.fromEntries(RECOVERY_UNITS.map((unit,index)=>[unit,{available:index<3,active:index<2,enabled:index<3}]));
+ const calls=[];let failRestore=false,failVerify=false;
+ const control={
+  capture:async unit=>({...states[unit]}),
+  stop:async unit=>{calls.push('stop:'+unit);states[unit].active=false;},
+  reload:async()=>{calls.push('reload');},
+  restore:async(unit,prior)=>{calls.push('restore:'+unit);if(failRestore&&unit===RECOVERY_UNITS[1])throw new Error('restore_failed');states[unit]={...prior};},
+  verifyRestored:async prior=>{calls.push('verify-restored');for(const unit of RECOVERY_UNITS)assert.deepEqual(states[unit],prior[unit]);},
+ };
+ const verifyOffline=async()=>{calls.push('verify-offline');if(failVerify)throw new Error('offline_proof_failed');for(const unit of RECOVERY_UNITS){const path=join(unitDirectory,unit);assert.equal(lstatSync(path).isSymbolicLink(),true);assert.equal(readlinkSync(path),'/dev/null');assert.equal(states[unit].active,false);}return true;};
+ const recoverWorkers=async()=>{calls.push('recover-workers');};
+ return {root,unitDirectory,journal,states,calls,control,verifyOffline,recoverWorkers,setFailRestore:value=>{failRestore=value;},setFailVerify:value=>{failVerify=value;},cleanup:()=>rmSync(root,{recursive:true,force:true})};
+}
+
+test('Maintenance begins offline then restores exact prior files and service states',{skip:process.platform==='win32'},async()=>{
+ const f=fixture();try{
+  await beginInteractiveMaintenance(f);assert.equal(existsSync(f.journal),true);
+  assert.ok(f.calls.indexOf('recover-workers')>f.calls.indexOf('reload'));
+  assert.ok(f.calls.indexOf('verify-offline')>f.calls.indexOf('recover-workers'));
+  await finishInteractiveMaintenance(f);assert.equal(existsSync(f.journal),false);
+  for(const unit of RECOVERY_UNITS.slice(0,3))assert.equal(readFileSync(join(f.unitDirectory,unit),'utf8'),'[Service]\nExecStart=/bin/true\n');
+  assert.equal(existsSync(join(f.unitDirectory,RECOVERY_UNITS[3])),false);
+  assert.equal(f.states[RECOVERY_UNITS[0]].active,true);
+ }finally{f.cleanup();}
+});
+
+test('Failed offline proof restores prior state and retains no successful recovery',{skip:process.platform==='win32'},async()=>{
+ const f=fixture();try{
+  f.setFailVerify(true);
+  await assert.rejects(beginInteractiveMaintenance(f),/offline_proof_failed/);
+  assert.equal(existsSync(f.journal),false);assert.equal(f.states[RECOVERY_UNITS[0]].active,true);
+  assert.equal(lstatSync(join(f.unitDirectory,RECOVERY_UNITS[0])).isFile(),true);
+ }finally{f.cleanup();}
+});
+
+test('Interrupted or failed restoration retains journal and can be retried',{skip:process.platform==='win32'},async()=>{
+ const f=fixture();try{
+  await beginInteractiveMaintenance(f);f.setFailRestore(true);
+  await assert.rejects(finishInteractiveMaintenance(f),/restore_failed/);
+  assert.equal(existsSync(f.journal),true);
+  f.setFailRestore(false);await finishInteractiveMaintenance(f);
+  assert.equal(existsSync(f.journal),false);assert.equal(f.states[RECOVERY_UNITS[1]].active,true);
+ }finally{f.cleanup();}
+});

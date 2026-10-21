@@ -122,3 +122,10 @@ export function restoreInteractiveUnitFiles({journal,unitDirectory,units}){
  for(let index=0;index<record.files.length;index++)if(states[index]==='masked')restoreFile(join(unitDirectory,record.files[index].unit),record.files[index].previous);
  return record;
 }
+
+export function completeInteractiveMaintenanceJournal({journal,unitDirectory,units}){
+ readInteractiveMaintenanceJournal({journal,unitDirectory,units});
+ const before=lstatSync(journal),after=lstatSync(journal);
+ if(!before.isFile()||before.dev!==after.dev||before.ino!==after.ino)throw fail('unsafe_interactive_maintenance_journal');
+ unlinkSync(journal);syncDirectory(dirname(journal));
+}
