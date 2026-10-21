@@ -34,3 +34,15 @@ linux('Offline recovery refuses a marker replaced while services are checked',as
   assert.equal(barrier.isClear(),false);
  }finally{rmSync(dir,{recursive:true,force:true});}
 });
+
+linux('A pending maintenance journal blocks document claims after the lease marker is cleared',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'localai-barrier-'));chmodSync(dir,0o700);
+ const path=join(dir,'interactive.lock'),journalPath=join(dir,'maintenance.json');
+ try{
+  const barrier=createInteractiveLeaseBarrier({path,journalPath});
+  const token=barrier.begin();writeFileSync(journalPath,'pending',{mode:0o600});
+  barrier.finish(token);
+  assert.equal(barrier.isClear(),false);
+  rmSync(journalPath);assert.equal(barrier.isClear(),true);
+ }finally{rmSync(dir,{recursive:true,force:true});}
+});

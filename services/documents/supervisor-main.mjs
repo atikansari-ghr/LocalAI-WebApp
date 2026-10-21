@@ -27,7 +27,7 @@ const vault=keyExists?openVault(keyPath):readdirSync(stateDir).length===0?initia
 if(!vault)throw new Error('document_state_recovery_required');
 const store=openDocumentJobStore(dbPath,{vault}),runner=createDocumentJobRunner({store,workerPath});
 const admission=createResourceAdmission({resources:createResourceReader()});
-const barrier=createInteractiveLeaseBarrier({path:join(stateDir,'interactive.lock')});
+const barrier=createInteractiveLeaseBarrier({path:join(stateDir,'interactive.lock'),journalPath:join(stateDir,'maintenance.json')});
 const scheduler=createDocumentSupervisorScheduler({runner,admission,barrier});
 let stopping=false,wake,stopPromise;
 await scheduler.prepare();

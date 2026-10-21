@@ -1,6 +1,6 @@
 import {randomBytes} from 'node:crypto';
 import {constants,closeSync,fstatSync,fsyncSync,lstatSync,openSync,readFileSync,unlinkSync,writeSync} from 'node:fs';
-import {dirname,isAbsolute} from 'node:path';
+import {basename,dirname,isAbsolute} from 'node:path';
 
 const blocked=()=>new Error('interactive_recovery_required');
 const syncDirectory=directory=>{const fd=openSync(directory,'r');try{fsyncSync(fd);}finally{closeSync(fd);}};
@@ -8,12 +8,14 @@ const syncDirectory=directory=>{const fd=openSync(directory,'r');try{fsyncSync(f
 // An unclean lease leaves this root-owned marker in place across supervisor
 // restarts. Background claims must remain stopped until a separate verified
 // recovery procedure clears it; merely reopening the service cannot do so.
-export function createInteractiveLeaseBarrier({path}={}){
+export function createInteractiveLeaseBarrier({path,journalPath}={}){
  if(process.platform==='win32'||typeof path!=='string'||!isAbsolute(path))throw new TypeError('invalid_interactive_lease_barrier');
  const directory=dirname(path),parent=lstatSync(directory);
  if(!parent.isDirectory()||parent.uid!==process.getuid()||(parent.mode&0o077)!==0)throw new Error('unsafe_interactive_lease_barrier_directory');
+ if(journalPath!==undefined&&(typeof journalPath!=='string'||!isAbsolute(journalPath)||dirname(journalPath)!==directory||basename(journalPath)!=='maintenance.json'))throw new TypeError('invalid_interactive_lease_barrier');
+ const present=file=>{try{lstatSync(file);return true;}catch(error){if(error?.code==='ENOENT')return false;throw blocked();}};
  return Object.freeze({
-  isClear(){try{lstatSync(path);return false;}catch(error){if(error?.code==='ENOENT')return true;throw blocked();}},
+  isClear(){return !present(path)&&!(journalPath&&present(journalPath));},
   begin(){
    const token=randomBytes(32).toString('hex');let fd;
    try{fd=openSync(path,'wx',0o600);writeSync(fd,token);fsyncSync(fd);}
