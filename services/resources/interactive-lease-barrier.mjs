@@ -1,5 +1,5 @@
 import {randomBytes} from 'node:crypto';
-import {closeSync,fsyncSync,lstatSync,openSync,readFileSync,unlinkSync,writeSync} from 'node:fs';
+import {constants,closeSync,fstatSync,fsyncSync,lstatSync,openSync,readFileSync,unlinkSync,writeSync} from 'node:fs';
 import {dirname,isAbsolute} from 'node:path';
 
 const blocked=()=>new Error('interactive_recovery_required');
@@ -26,6 +26,20 @@ export function createInteractiveLeaseBarrier({path}={}){
    let state;try{state=lstatSync(path);if(!state.isFile()||state.uid!==process.getuid()||(state.mode&0o077)!==0||readFileSync(path,'utf8')!==token)throw blocked();}
    catch{throw blocked();}
    unlinkSync(path);syncDirectory(directory);
+  },
+  async recover(verifyStopped){
+   if(typeof verifyStopped!=='function')throw new TypeError('invalid_interactive_recovery_verifier');
+   let fd;
+   try{
+    fd=openSync(path,constants.O_RDONLY|constants.O_NOFOLLOW);
+    const before=fstatSync(fd),token=readFileSync(fd,'utf8');
+    if(!before.isFile()||before.nlink!==1||before.uid!==process.getuid()||(before.mode&0o077)!==0||before.size!==64||!/^[a-f0-9]{64}$/.test(token))throw blocked();
+    if(await verifyStopped()!==true)throw blocked();
+    const after=lstatSync(path);
+    if(!after.isFile()||after.dev!==before.dev||after.ino!==before.ino||after.size!==before.size||after.mode!==before.mode||after.uid!==before.uid||readFileSync(path,'utf8')!==token)throw blocked();
+    unlinkSync(path);syncDirectory(directory);
+   }catch{throw blocked();}
+   finally{if(fd!==undefined)closeSync(fd);}
   }
  });
 }
