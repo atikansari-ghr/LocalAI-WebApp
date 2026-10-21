@@ -23,6 +23,7 @@ test('Maintenance journal captures fixed unit bytes, metadata and missing candid
   assert.equal(result.files[0].previous.data,Buffer.from('[Service]\nExecStart=/bin/true\n').toString('base64'));
   assert.equal(result.files[0].previous.mode,0o644);assert.equal(result.files[3].previous,null);
   assert.equal(lstatSync(f.journal).mode&0o777,0o600);
+  assert.equal(lstatSync(f.journal).nlink,1);
   assert.deepEqual(readInteractiveMaintenanceJournal({journal:f.journal,unitDirectory:f.unitDirectory}),result);
   assert.throws(()=>prepareInteractiveMaintenanceJournal({journal:f.journal,unitDirectory:f.unitDirectory,serviceStates:f.serviceStates}),/interactive_maintenance_journal_exists/);
  }finally{f.cleanup();}
@@ -96,6 +97,28 @@ test('Restore refuses an unexpected mask target and retains the journal',{skip:p
   const path=join(f.unitDirectory,RECOVERY_UNITS[1]);rmSync(path);symlinkSync('/bin/true',path);
   assert.throws(()=>restoreInteractiveUnitFiles({journal:f.journal,unitDirectory:f.unitDirectory}),/interactive_maintenance_unit_changed/);
   assert.equal(readlinkSync(join(f.unitDirectory,RECOVERY_UNITS[0])),'/dev/null');
+  assert.equal(lstatSync(f.journal).isFile(),true);
+ }finally{f.cleanup();}
+});
+
+test('Restoration resumes after only one unit was masked',{skip:process.platform==='win32'},()=>{
+ const f=fixture();try{
+  prepareInteractiveMaintenanceJournal({journal:f.journal,unitDirectory:f.unitDirectory,serviceStates:f.serviceStates});
+  const first=join(f.unitDirectory,RECOVERY_UNITS[0]);rmSync(first);symlinkSync('/dev/null',first);
+  restoreInteractiveUnitFiles({journal:f.journal,unitDirectory:f.unitDirectory});
+  assert.equal(readFileSync(first,'utf8'),'[Service]\nExecStart=/bin/true\n');
+  for(const unit of RECOVERY_UNITS.slice(1,3))assert.equal(lstatSync(join(f.unitDirectory,unit)).isFile(),true);
+  assert.equal(lstatSync(f.journal).isFile(),true);
+ }finally{f.cleanup();}
+});
+
+test('Restoration resumes after one original definition was already restored',{skip:process.platform==='win32'},()=>{
+ const f=fixture();try{
+  prepareInteractiveMaintenanceJournal({journal:f.journal,unitDirectory:f.unitDirectory,serviceStates:f.serviceStates});
+  applyInteractiveUnitMasks({journal:f.journal,unitDirectory:f.unitDirectory});
+  const first=join(f.unitDirectory,RECOVERY_UNITS[0]);rmSync(first);writeFileSync(first,'[Service]\nExecStart=/bin/true\n',{mode:0o644});
+  restoreInteractiveUnitFiles({journal:f.journal,unitDirectory:f.unitDirectory});
+  for(const unit of RECOVERY_UNITS.slice(0,3))assert.equal(readFileSync(join(f.unitDirectory,unit),'utf8'),'[Service]\nExecStart=/bin/true\n');
   assert.equal(lstatSync(f.journal).isFile(),true);
  }finally{f.cleanup();}
 });

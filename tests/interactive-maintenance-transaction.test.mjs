@@ -54,3 +54,16 @@ test('Interrupted or failed restoration retains journal and can be retried',{ski
   assert.equal(existsSync(f.journal),false);assert.equal(f.states[RECOVERY_UNITS[1]].active,true);
  }finally{f.cleanup();}
 });
+
+test('A new begin restores an interrupted journal before capturing fresh states',{skip:process.platform==='win32'},async()=>{
+ const f=fixture();try{
+  await beginInteractiveMaintenance(f);
+  const priorRestoreCount=f.calls.filter(call=>call.startsWith('restore:')).length;
+  await beginInteractiveMaintenance(f);
+  assert.equal(existsSync(f.journal),true);
+  assert.equal(f.calls.filter(call=>call.startsWith('restore:')).length,priorRestoreCount+RECOVERY_UNITS.length);
+  assert.equal(f.calls.filter(call=>call==='verify-offline').length,2);
+  await finishInteractiveMaintenance(f);
+  assert.equal(f.states[RECOVERY_UNITS[0]].active,true);
+ }finally{f.cleanup();}
+});

@@ -65,7 +65,7 @@ export function prepareInteractiveMaintenanceJournal({journal,unitDirectory,serv
  try{
   fd=openSync(temporary,'wx',0o600);writeFileSync(fd,JSON.stringify(record));fchmodSync(fd,0o600);fsyncSync(fd);closeSync(fd);fd=undefined;
   linkSync(temporary,journal);syncDirectory(dirname(journal));
- }finally{if(fd!==undefined)closeSync(fd);if(existsSync(temporary))unlinkSync(temporary);}
+ }finally{if(fd!==undefined)closeSync(fd);if(existsSync(temporary)){unlinkSync(temporary);syncDirectory(dirname(journal));}}
  return record;
 }
 
