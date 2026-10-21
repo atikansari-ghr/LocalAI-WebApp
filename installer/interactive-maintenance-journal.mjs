@@ -27,20 +27,31 @@ function snapshot(path){
  }catch(error){if(error?.code==='ENOENT')return null;throw fail('unsafe_interactive_maintenance_unit');}
  finally{if(fd!==undefined)closeSync(fd);}
 }
+function validServices(serviceStates,files){
+ if(!serviceStates||typeof serviceStates!=='object'||Object.keys(serviceStates).sort().join(',')!==[...RECOVERY_UNITS].sort().join(','))throw fail('unsafe_interactive_maintenance_service_state');
+ for(let index=0;index<RECOVERY_UNITS.length;index++){
+  const state=serviceStates[RECOVERY_UNITS[index]];
+  if(!state||Object.keys(state).sort().join(',')!=='active,available,enabled'||Object.values(state).some(value=>typeof value!=='boolean')||state.available!==Boolean(files[index].previous)||!state.available&&(state.active||state.enabled))throw fail('unsafe_interactive_maintenance_service_state');
+ }
+ return serviceStates;
+}
 function validRecord(record,unitDirectory){
- if(!record||Object.keys(record).sort().join(',')!=='createdAt,files,schemaVersion,unitDirectory'||record.schemaVersion!==1||record.unitDirectory!==unitDirectory||typeof record.createdAt!=='string'||!Number.isFinite(Date.parse(record.createdAt))||!Array.isArray(record.files)||record.files.length!==RECOVERY_UNITS.length)throw fail('unsafe_interactive_maintenance_journal');
+ if(!record||Object.keys(record).sort().join(',')!=='createdAt,files,schemaVersion,services,unitDirectory'||record.schemaVersion!==2||record.unitDirectory!==unitDirectory||typeof record.createdAt!=='string'||!Number.isFinite(Date.parse(record.createdAt))||!Array.isArray(record.files)||record.files.length!==RECOVERY_UNITS.length)throw fail('unsafe_interactive_maintenance_journal');
  for(let index=0;index<RECOVERY_UNITS.length;index++){
   const file=record.files[index];if(!file||Object.keys(file).sort().join(',')!=='previous,unit'||file.unit!==RECOVERY_UNITS[index])throw fail('unsafe_interactive_maintenance_journal');
   const previous=file.previous;if(previous===null)continue;
   if(!previous||Object.keys(previous).sort().join(',')!=='data,gid,mode,uid'||typeof previous.data!=='string'||previous.data.length>1400000||Buffer.from(previous.data,'base64').toString('base64')!==previous.data||![previous.mode,previous.uid,previous.gid].every(value=>Number.isSafeInteger(value)&&value>=0)||previous.mode>0o777||(previous.mode&0o022)!==0)throw fail('unsafe_interactive_maintenance_journal');
  }
+ validServices(record.services,record.files);
  return record;
 }
 
-export function prepareInteractiveMaintenanceJournal({journal,unitDirectory}){
+export function prepareInteractiveMaintenanceJournal({journal,unitDirectory,serviceStates}){
  safeJournalLocation(journal);safeDirectory(unitDirectory);
  try{lstatSync(journal);throw fail('interactive_maintenance_journal_exists');}catch(error){if(error?.code!=='ENOENT')throw error;}
- const record=validRecord({schemaVersion:1,createdAt:new Date().toISOString(),unitDirectory,files:RECOVERY_UNITS.map(unit=>({unit,previous:snapshot(join(unitDirectory,unit))}))},unitDirectory);
+ const files=RECOVERY_UNITS.map(unit=>({unit,previous:snapshot(join(unitDirectory,unit))}));
+ const services=validServices(serviceStates,files);
+ const record=validRecord({schemaVersion:2,createdAt:new Date().toISOString(),unitDirectory,files,services},unitDirectory);
  const temporary=join(dirname(journal),'.maintenance-'+randomUUID());let fd;
  try{
   fd=openSync(temporary,'wx',0o600);writeFileSync(fd,JSON.stringify(record));fchmodSync(fd,0o600);fsyncSync(fd);closeSync(fd);fd=undefined;
