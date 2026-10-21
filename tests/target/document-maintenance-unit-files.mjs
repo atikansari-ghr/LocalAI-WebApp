@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import {randomBytes,createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
-import {chmodSync,existsSync,mkdtempSync,readFileSync,unlinkSync,writeFileSync,rmSync} from 'node:fs';
+import {chmodSync,existsSync,lstatSync,mkdtempSync,readFileSync,readlinkSync,unlinkSync,writeFileSync,rmSync} from 'node:fs';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {beginInteractiveMaintenance,finishInteractiveMaintenance} from '../../installer/interactive-maintenance-transaction.mjs';
@@ -40,11 +40,16 @@ try{
  assert.equal(existsSync(journal),true);assert.equal(barrier.isClear(),false);
  await finishInteractiveMaintenance(options);
  assert.equal(existsSync(journal),false);assert.equal(barrier.isClear(),false);
- for(const crashPoint of ['after-begin','during-restore']){
+ for(const crashPoint of ['after-begin','after-first-mask','during-restore']){
   try{execFileSync(process.execPath,[fileURLToPath(new URL('./document-maintenance-crash-child.mjs',import.meta.url)),suffix,directory,crashPoint],{encoding:'utf8',timeout:20000});assert.fail('child did not stop abruptly');}
   catch(error){assert.equal(error.signal,'SIGKILL');}
   assert.equal(existsSync(journal),true);assert.equal(barrier.isClear(),false);
   if(crashPoint==='after-begin')assert.equal(await verifyOfflineSystemdUnits(readSystemdUnit,units),true);
+  if(crashPoint==='after-first-mask'){
+   assert.equal(lstatSync(paths[0]).isSymbolicLink(),true);
+   assert.equal(readlinkSync(paths[0]),'/dev/null');
+   for(const path of paths.slice(1))assert.equal(readFileSync(path,'utf8'),source);
+  }
   await finishInteractiveMaintenance(options);
   assert.equal(existsSync(journal),false);assert.equal(barrier.isClear(),false);
  }
@@ -56,7 +61,7 @@ try{
  assert.equal(barrier.isClear(),true);
  for(const path of paths)assert.equal(readFileSync(path,'utf8'),source);
  assert.equal(pid('localai.service'),baseline.gateway);assert.equal(pid('localai-chat.service'),baseline.chat);assert.equal(pid('localai-embedding.service'),baseline.embedding);assert.equal(packageDigest(),baseline.packages);
- process.stdout.write(JSON.stringify({gate:'native-etc-maintenance-transaction',effectiveMasks:true,transientWorkerStopped:true,priorServiceStatesRestored:true,crashJournalRecovered:true,restoreCrashRecovered:true,exactFilesRestored:true,journalBlocksUntilRestore:true,realGatewayAndWorkersUnchanged:true,packageInventoryUnchanged:true,activated:false})+'\n');
+ process.stdout.write(JSON.stringify({gate:'native-etc-maintenance-transaction',effectiveMasks:true,transientWorkerStopped:true,priorServiceStatesRestored:true,crashJournalRecovered:true,partialMaskCrashRecovered:true,restoreCrashRecovered:true,exactFilesRestored:true,journalBlocksUntilRestore:true,realGatewayAndWorkersUnchanged:true,packageInventoryUnchanged:true,activated:false})+'\n');
 }finally{
  let restoreFailure;
  if(existsSync(journal))try{await finishInteractiveMaintenance(options);}catch(error){restoreFailure=error;process.stderr.write(`Disposable maintenance journal retained at ${journal}: ${error.message}\n`);}
