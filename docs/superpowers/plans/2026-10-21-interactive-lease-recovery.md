@@ -43,13 +43,15 @@
 - [x] Add failing tests for unmasked, active, lingering-PID/control-group, missing and malformed unit states.
 - [x] Add a passing case requiring four fixed units masked and inactive with zero PIDs and no control group.
 - [x] Implement a bounded `systemctl show` parser and twice-check proof; the native proof uses explicit synthetic units only when `TARGET_TEST_LXC=disposable`.
-- [ ] Run focused and full tests; commit the verifier.
+- [x] Run focused and Windows full tests; commit the verifier. Debian full suite and CI follow the native checkpoint.
 
 ### Task 3: Native synthetic recovery and evidence
 
 **Files:** `tests/target/document-interactive-recovery.mjs`, `docs/verification/phase-4-interactive-recovery-2026-10-21.md`, `docs/progress.md`.
 
-- [ ] Create disposable synthetic services and an interrupted marker; show a running/unmasked unit prevents recovery.
-- [ ] Runtime-mask and stop only those synthetic services, recover the marker, and show a document claim can resume.
-- [ ] Verify the real gateway PID, package database and real service states remain unchanged; remove synthetic resources.
+- [x] Create disposable synthetic services and an interrupted marker; show a running/unmasked unit prevents recovery.
+- [x] Runtime-mask and stop only vendor-location synthetic services, recover the marker, and show a document claim can resume.
+- [x] Verify the real gateway PID, package database and real service states remain unchanged; remove synthetic resources.
 - [ ] Run documentation checks and required CI, update draft PR #5, and keep Phase 4 blocked on live gateway wiring and other gates.
+
+Ruling: A runtime mask does not override this installation's unit files in `/etc/systemd/system`; a synthetic `/etc` fixture proved the verifier rejects that state. The native success proof uses disposable units in `/usr/lib/systemd/system`, where a runtime mask takes precedence. This costs a separate journaled production maintenance workflow before the recovery candidate can clear a real marker; the gate remains blocked rather than weakening the proof.
