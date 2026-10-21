@@ -34,6 +34,8 @@ test('Maintenance journal rejects linked or writable unit files and unsafe journ
   assert.throws(()=>prepareInteractiveMaintenanceJournal({journal:f.journal,unitDirectory:f.unitDirectory}),/unsafe_interactive_maintenance_unit/);
   chmodSync(path,0o644);chmodSync(join(f.root,'journal'),0o755);
   assert.throws(()=>prepareInteractiveMaintenanceJournal({journal:f.journal,unitDirectory:f.unitDirectory}),/unsafe_interactive_maintenance_journal_directory/);
+  chmodSync(join(f.root,'journal'),0o700);writeFileSync(path,Buffer.alloc(1024**2+1));
+  assert.throws(()=>prepareInteractiveMaintenanceJournal({journal:f.journal,unitDirectory:f.unitDirectory}),/unsafe_interactive_maintenance_unit/);
  }finally{f.cleanup();}
 });
 

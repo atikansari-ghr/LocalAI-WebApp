@@ -19,8 +19,10 @@ function snapshot(path){
  let fd;
  try{
   fd=openSync(path,constants.O_RDONLY|constants.O_NOFOLLOW);
-  const before=fstatSync(fd),data=readFileSync(fd),after=lstatSync(path);
-  if(!before.isFile()||before.nlink!==1||before.uid!==own()||(before.mode&0o022)!==0||before.size>1024**2||after.dev!==before.dev||after.ino!==before.ino||after.size!==before.size||after.mode!==before.mode||after.uid!==before.uid||after.nlink!==1)throw fail('unsafe_interactive_maintenance_unit');
+  const before=fstatSync(fd);
+  if(!before.isFile()||before.nlink!==1||before.uid!==own()||(before.mode&0o022)!==0||before.size>1024**2)throw fail('unsafe_interactive_maintenance_unit');
+  const data=readFileSync(fd),after=lstatSync(path);
+  if(after.dev!==before.dev||after.ino!==before.ino||after.size!==before.size||after.mode!==before.mode||after.uid!==before.uid||after.nlink!==1||data.length!==before.size)throw fail('unsafe_interactive_maintenance_unit');
   return {data:data.toString('base64'),mode:before.mode&0o777,uid:before.uid,gid:before.gid};
  }catch(error){if(error?.code==='ENOENT')return null;throw fail('unsafe_interactive_maintenance_unit');}
  finally{if(fd!==undefined)closeSync(fd);}
