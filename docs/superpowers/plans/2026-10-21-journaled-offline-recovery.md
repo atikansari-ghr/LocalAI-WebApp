@@ -11,6 +11,6 @@
 ## Tasks
 
 - [x] Build and test protected journal and exact file-snapshot primitives, including unexpected symlinks, ownership/mode, oversized-file and path rejection. Interrupted-write crash proof remains part of the later transaction task.
-- [ ] Build and test the stop/mask/reload/worker-cleanup/verify/marker-clear/restore state machine with injected controls and rollback failures. The candidate root command and fixed controls now exist; installed command-level crash/retry and worker-stop proof remain open.
+- [ ] Build and test the stop/mask/reload/worker-cleanup/verify/marker-clear/restore state machine with injected controls and rollback failures. The candidate root command and fixed controls now exist; a disposable native worker-stop proof passes, while installed command-level crash/retry remains open.
 - [ ] Native Debian proof using only synthetic `/etc` units: active and enabled state, crash points, retry, rollback, no transient worker, unchanged live PIDs/package database. Completed-begin and mid-restoration SIGKILL plus partial-state retry are proven; interruption between mask replacements and power-loss durability remain to prove.
 - [ ] Review safety boundaries; run full Windows/Debian suites, documentation and required CI; update draft PR #5 with remaining gate failures.
