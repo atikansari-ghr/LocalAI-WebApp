@@ -5,7 +5,7 @@ import {RECOVERY_UNITS,parseStoppedMaskedUnit,verifyOfflineSystemdUnits} from '.
 const good='LoadState=masked\nUnitFileState=masked-runtime\nActiveState=inactive\nSubState=dead\nMainPID=0\nControlPID=0\nControlGroup=\n';
 
 test('Offline recovery requires four exact stopped and masked services',async()=>{
- assert.deepEqual(RECOVERY_UNITS,['localai.service','localai-chat.service','localai-embedding.service','localai-document-supervisor.service']);
+ assert.deepEqual(RECOVERY_UNITS,['localai.service','localai-chat.service','localai-embedding.service','localai-documents.service']);
  assert.equal(parseStoppedMaskedUnit(good),true);
  let checks=0;assert.equal(await verifyOfflineSystemdUnits(async()=>{checks++;return good;}),true);assert.equal(checks,8);
 });

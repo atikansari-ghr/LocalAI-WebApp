@@ -1,6 +1,6 @@
 import {execFileSync} from 'node:child_process';
 
-export const RECOVERY_UNITS=Object.freeze(['localai.service','localai-chat.service','localai-embedding.service','localai-document-supervisor.service']);
+export const RECOVERY_UNITS=Object.freeze(['localai.service','localai-chat.service','localai-embedding.service','localai-documents.service']);
 const blocked=()=>new Error('interactive_recovery_required');
 const keys=['LoadState','UnitFileState','ActiveState','SubState','MainPID','ControlPID','ControlGroup'];
 
