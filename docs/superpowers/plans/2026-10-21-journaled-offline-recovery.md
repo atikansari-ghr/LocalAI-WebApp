@@ -8,7 +8,7 @@
 
 ## Tasks
 
-- [ ] Build and test protected journal and exact file-snapshot primitives, including interrupted writes, unexpected symlinks, ownership/mode and path rejection.
+- [x] Build and test protected journal and exact file-snapshot primitives, including unexpected symlinks, ownership/mode, oversized-file and path rejection. Interrupted-write crash proof remains part of the later transaction task.
 - [ ] Build and test the stop/mask/reload/worker-cleanup/verify/marker-clear/restore state machine with injected controls and rollback failures.
 - [ ] Native Debian proof using only synthetic `/etc` units: active and enabled state, crash points, retry, rollback, no transient worker, unchanged live PIDs/package database.
 - [ ] Review safety boundaries; run full Windows/Debian suites, documentation and required CI; update draft PR #5 with remaining gate failures.

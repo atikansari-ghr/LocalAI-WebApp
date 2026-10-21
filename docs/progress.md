@@ -168,3 +168,7 @@ The offline recovery preflight now rejects a queued systemd job or pending unit 
 The same internal recovery proof now checks that no transient document-worker unit remains. A disposable matching worker blocked synthetic marker removal after the four long-lived proof services were masked and stopped; stopping and collecting that worker then permitted only the synthetic recovery. [Evidence](verification/phase-4-interactive-recovery-2026-10-21.md). Production still needs an exclusive journaled procedure to stop/reap workers, hold effective masks and restore the installed units safely.
 
 At source `fed06e5`, the full Windows suite passed 266 tests plus 21 platform skips, Debian passed 287/287, documentation and native disposable proof passed, and both required CI jobs passed. No production document service or route was activated; Phase 4 remains a draft.
+
+The first journaled offline-maintenance primitive now captures exact fixed unit bytes and metadata into an owner-protected journal before any mutation. Focused root-run Debian tests pass, including symlink, writable-file, oversized-file and journal-tamper rejection. [Evidence](verification/phase-4-interactive-recovery-2026-10-21.md). Service-state capture, effective `/etc` masks, crash recovery and production wiring remain unimplemented; Phase 4 stays blocked.
+
+At `8b57e4b`, Windows passed 266 tests plus 24 platform skips, Debian passed 290/290, documentation checks and both CI jobs passed. The new journal code has no service-control entrypoint and was not run against deployed unit files.
