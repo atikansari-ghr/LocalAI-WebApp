@@ -1,5 +1,6 @@
 import {lstatSync} from 'node:fs';
 import {beginInteractiveMaintenance,finishInteractiveMaintenance} from './interactive-maintenance-transaction.mjs';
+import {assertInteractiveMaintenanceBarrier} from '../services/resources/interactive-lease-barrier.mjs';
 
 function journalExists(path){
  try{lstatSync(path);return true;}
@@ -11,6 +12,7 @@ function journalExists(path){
 export async function runInteractiveMaintenance(options){
  const {journal,barrier,verifyOffline}=options??{};
  if(!barrier||typeof barrier.isClear!=='function'||typeof barrier.recover!=='function'||typeof verifyOffline!=='function')throw new TypeError('invalid_interactive_maintenance_operator');
+ assertInteractiveMaintenanceBarrier(barrier,journal);
  let restored=false;
  if(journalExists(journal)){
   await finishInteractiveMaintenance(options);

@@ -4,6 +4,11 @@ import {basename,dirname,isAbsolute} from 'node:path';
 
 const blocked=()=>new Error('interactive_recovery_required');
 const syncDirectory=directory=>{const fd=openSync(directory,'r');try{fsyncSync(fd);}finally{closeSync(fd);}};
+const maintenanceBindings=new WeakMap();
+
+export function assertInteractiveMaintenanceBarrier(barrier,journal){
+ if(typeof journal!=='string'||!isAbsolute(journal)||!maintenanceBindings.has(barrier)||maintenanceBindings.get(barrier)!==journal)throw new TypeError('invalid_interactive_maintenance_barrier');
+}
 
 // An unclean lease leaves this root-owned marker in place across supervisor
 // restarts. Background claims must remain stopped until a separate verified
@@ -14,7 +19,7 @@ export function createInteractiveLeaseBarrier({path,journalPath}={}){
  if(!parent.isDirectory()||parent.uid!==process.getuid()||(parent.mode&0o077)!==0)throw new Error('unsafe_interactive_lease_barrier_directory');
  if(journalPath!==undefined&&(typeof journalPath!=='string'||!isAbsolute(journalPath)||dirname(journalPath)!==directory||basename(journalPath)!=='maintenance.json'))throw new TypeError('invalid_interactive_lease_barrier');
  const present=file=>{try{lstatSync(file);return true;}catch(error){if(error?.code==='ENOENT')return false;throw blocked();}};
- return Object.freeze({
+ const barrier=Object.freeze({
   isClear(){return !present(path)&&!(journalPath&&present(journalPath));},
   begin(){
    const token=randomBytes(32).toString('hex');let fd;
@@ -44,4 +49,6 @@ export function createInteractiveLeaseBarrier({path,journalPath}={}){
    finally{if(fd!==undefined)closeSync(fd);}
   }
  });
+ maintenanceBindings.set(barrier,journalPath);
+ return barrier;
 }

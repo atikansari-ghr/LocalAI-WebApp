@@ -93,3 +93,22 @@ test('Operator clears a marker only inside a verified offline window',{skip:proc
   assert.equal(f.states[RECOVERY_UNITS[0]].active,true);
  }finally{f.cleanup();}
 });
+
+test('Operator refuses a marker-only barrier before touching service state',{skip:process.platform==='win32'},async()=>{
+ const f=fixture();try{
+  const path=join(f.root,'journal','interactive.lock');
+  const barrier=createInteractiveLeaseBarrier({path});barrier.begin();
+  await assert.rejects(runInteractiveMaintenance({...f,barrier}),/invalid_interactive_maintenance_barrier/);
+  assert.equal(existsSync(path),true);assert.equal(existsSync(f.journal),false);
+  assert.deepEqual(f.calls,[]);
+ }finally{f.cleanup();}
+});
+
+test('Operator refuses a journal-backed barrier for a different journal',{skip:process.platform==='win32'},async()=>{
+ const f=fixture();try{
+  const other=join(f.root,'other');mkdirSync(other,{mode:0o700});
+  const barrier=createInteractiveLeaseBarrier({path:join(other,'interactive.lock'),journalPath:join(other,'maintenance.json')});barrier.begin();
+  await assert.rejects(runInteractiveMaintenance({...f,barrier}),/invalid_interactive_maintenance_barrier/);
+  assert.equal(existsSync(f.journal),false);assert.deepEqual(f.calls,[]);
+ }finally{f.cleanup();}
+});
