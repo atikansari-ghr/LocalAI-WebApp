@@ -38,15 +38,17 @@ try{
  assert.equal(existsSync(journal),true);assert.equal(barrier.isClear(),false);
  await finishInteractiveMaintenance(options);
  assert.equal(existsSync(journal),false);assert.equal(barrier.isClear(),false);
- try{execFileSync(process.execPath,[fileURLToPath(new URL('./document-maintenance-crash-child.mjs',import.meta.url)),suffix,directory],{encoding:'utf8',timeout:20000});assert.fail('child did not stop abruptly');}
- catch(error){assert.equal(error.signal,'SIGKILL');}
- assert.equal(existsSync(journal),true);assert.equal(barrier.isClear(),false);
- assert.equal(await verifyOfflineSystemdUnits(readSystemdUnit,units),true);
- await finishInteractiveMaintenance(options);
- assert.equal(existsSync(journal),false);assert.equal(barrier.isClear(),false);
+ for(const crashPoint of ['after-begin','during-restore']){
+  try{execFileSync(process.execPath,[fileURLToPath(new URL('./document-maintenance-crash-child.mjs',import.meta.url)),suffix,directory,crashPoint],{encoding:'utf8',timeout:20000});assert.fail('child did not stop abruptly');}
+  catch(error){assert.equal(error.signal,'SIGKILL');}
+  assert.equal(existsSync(journal),true);assert.equal(barrier.isClear(),false);
+  if(crashPoint==='after-begin')assert.equal(await verifyOfflineSystemdUnits(readSystemdUnit,units),true);
+  await finishInteractiveMaintenance(options);
+  assert.equal(existsSync(journal),false);assert.equal(barrier.isClear(),false);
+ }
  for(const path of paths)assert.equal(readFileSync(path,'utf8'),source);
  assert.equal(pid('localai.service'),baseline.gateway);assert.equal(pid('localai-chat.service'),baseline.chat);assert.equal(pid('localai-embedding.service'),baseline.embedding);assert.equal(packageDigest(),baseline.packages);
- process.stdout.write(JSON.stringify({gate:'native-etc-maintenance-transaction',effectiveMasks:true,priorServiceStatesRestored:true,crashJournalRecovered:true,exactFilesRestored:true,markerRetained:true,realGatewayAndWorkersUnchanged:true,packageInventoryUnchanged:true,activated:false})+'\n');
+ process.stdout.write(JSON.stringify({gate:'native-etc-maintenance-transaction',effectiveMasks:true,priorServiceStatesRestored:true,crashJournalRecovered:true,restoreCrashRecovered:true,exactFilesRestored:true,markerRetained:true,realGatewayAndWorkersUnchanged:true,packageInventoryUnchanged:true,activated:false})+'\n');
 }finally{
  if(existsSync(journal))await finishInteractiveMaintenance(options);
  for(const unit of units)try{systemctl('stop',unit);}catch{}
