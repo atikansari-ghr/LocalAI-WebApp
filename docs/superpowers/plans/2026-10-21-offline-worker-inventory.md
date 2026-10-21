@@ -8,5 +8,5 @@
 
 - [x] Write failing tests for present, malformed and unavailable transient-unit inventories.
 - [x] Implement a bounded two-pass inventory of the fixed `localai-document-job-*.service` pattern.
-- [ ] Extend the native disposable proof to reject a running transient document worker and clear a synthetic marker only after it is gone.
+- [x] Extend the native disposable proof to reject a running transient document worker and clear a synthetic marker only after it is gone.
 - [ ] Run Windows, Debian, native and CI checks; update draft PR #5 and keep Phase 4 blocked.
