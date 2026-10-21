@@ -3,7 +3,7 @@ import {createCipheriv,createDecipheriv,createHash,randomBytes,randomUUID} from 
 import {chmodSync,lstatSync} from 'node:fs';
 import {dirname,resolve} from 'node:path';
 import {validateDocumentSchema} from './schema.mjs';
-import {prepareStructuredEvidence} from './structured-extract.mjs';
+import {prepareStructuredEvidence,assessStructuredCandidates} from './structured-extract.mjs';
 
 const APPLICATION_ID=0x4c414953; // LAIS, separate from document jobs and account state.
 const TABLE_SQL=`CREATE TABLE structured_jobs (
@@ -50,8 +50,12 @@ export function openStructuredJobStore(path,{vault,now=Date.now}={}){
  return Object.freeze({
   enqueue({namespace,scope,idempotencyKey,report,schema:input,expiresAt}={}){
    const at=now();if(!validNamespace(namespace)||!validScope(scope)||typeof idempotencyKey!=='string'||!/^[A-Za-z0-9_-]{16,128}$/.test(idempotencyKey)||!Number.isSafeInteger(at)||!Number.isSafeInteger(expiresAt)||expiresAt<=at||expiresAt>at+7*86400000)throw new TypeError('invalid_structured_job');
-   const schema=validateDocumentSchema(input);prepareStructuredEvidence(report);
-   const payload=Buffer.from(JSON.stringify({report,schema}));if(payload.length>131072)throw invalid('structured_input_too_large');
+   const schema=validateDocumentSchema(input),evidence=prepareStructuredEvidence(report);
+   const digest=evidence[0].source.documentSha256;
+   if(evidence.some(unit=>unit.source.documentSha256!==digest))throw invalid('invalid_structured_evidence');
+   const normalizedReport={document:{sha256:digest},units:evidence.map(unit=>({text:unit.text,source:unit.source}))};
+   prepareStructuredEvidence(normalizedReport);
+   const payload=Buffer.from(JSON.stringify({report:normalizedReport,schema}));if(payload.length>131072)throw invalid('structured_input_too_large');
    const requestHash=vault.digest(payload.toString('base64url'),'structured-request-v1');
    const idempotencyHash=vault.digest(JSON.stringify([namespace,scope,idempotencyKey]),'structured-idempotency-v1');
    return transaction(()=>{
@@ -65,7 +69,7 @@ export function openStructuredJobStore(path,{vault,now=Date.now}={}){
     return visible(select.get(id,namespace,scope));
    });
   },
-  get(id,namespace,scope){if(!validNamespace(namespace)||!validScope(scope))return null;return visible(select.get(id,namespace,scope));},
+  get(id,namespace,scope){if(!validNamespace(namespace)||!validScope(scope))return null;const row=select.get(id,namespace,scope);return row?.expires_at>now()?visible(row):null;},
   claim(){return transaction(()=>{
    const row=db.prepare("SELECT * FROM structured_jobs WHERE status='queued' AND expires_at>? ORDER BY created_at,id LIMIT 1").get(now());if(!row)return null;
    const input=JSON.parse(decrypt(keyFor(row),row.id,'input',row.input_nonce,row.input_body,row.input_tag).toString('utf8'));
@@ -73,20 +77,22 @@ export function openStructuredJobStore(path,{vault,now=Date.now}={}){
    db.prepare("UPDATE structured_jobs SET status='running',claim_hash=?,updated_at=? WHERE id=? AND status='queued'").run(hash,now(),row.id);
    return Object.freeze({id:row.id,namespace:row.namespace,scope:row.scope,report:input.report,schema:input.schema,token});
   });},
-  complete(id,token,result){
+  complete(id,token,modelText){
    if(typeof token!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(token))throw invalid('structured_claim_invalid');
-   const encoded=Buffer.from(JSON.stringify(result??null));if(encoded.length>131072||result?.reviewRequired!==true)throw invalid('structured_result_invalid');
    return transaction(()=>{
     const hash=createHash('sha256').update(token).digest('hex'),row=db.prepare("SELECT * FROM structured_jobs WHERE id=? AND status='running' AND claim_hash=?").get(id,hash);if(!row)throw invalid('structured_claim_invalid');
+    if(row.expires_at<=now())throw invalid('structured_job_expired');
     const input=JSON.parse(decrypt(keyFor(row),id,'input',row.input_nonce,row.input_body,row.input_tag).toString('utf8'));
-    if(result.schemaId!==input.schema.schemaId||result.revision!==input.schema.revision)throw invalid('structured_result_invalid');
+    let result;try{result=assessStructuredCandidates(input.schema,prepareStructuredEvidence(input.report),modelText);}catch{throw invalid('structured_result_invalid');}
+    const encoded=Buffer.from(JSON.stringify(result));if(encoded.length>131072)throw invalid('structured_result_invalid');
     const sealed=encrypt(keyFor(row),id,'result',encoded);
     db.prepare("UPDATE structured_jobs SET status='complete',claim_hash=NULL,result_nonce=?,result_body=?,result_tag=?,updated_at=? WHERE id=? AND status='running' AND claim_hash=?").run(sealed.nonce,sealed.body,sealed.tag,now(),id,hash);
     return visible(select.get(id,row.namespace,row.scope));
    });
   },
-  result(id,namespace,scope){if(!validNamespace(namespace)||!validScope(scope))return null;const row=select.get(id,namespace,scope);if(!row||row.status!=='complete')return null;return JSON.parse(decrypt(keyFor(row),id,'result',row.result_nonce,row.result_body,row.result_tag).toString('utf8'));},
+  result(id,namespace,scope){if(!validNamespace(namespace)||!validScope(scope))return null;const row=select.get(id,namespace,scope);if(!row||row.status!=='complete'||row.expires_at<=now())return null;return JSON.parse(decrypt(keyFor(row),id,'result',row.result_nonce,row.result_body,row.result_tag).toString('utf8'));},
   recoverInterrupted({interactiveRecoveryConfirmed}={}){if(interactiveRecoveryConfirmed!==true)throw invalid('interactive_recovery_required');return db.prepare("UPDATE structured_jobs SET status='failed',claim_hash=NULL,error_code='structured_interrupted',updated_at=? WHERE status='running'").run(now()).changes;},
+  purgeExpired(){return db.prepare("DELETE FROM structured_jobs WHERE expires_at<=? AND status!='running'").run(now()).changes;},
   close(){db.close();}
  });
 }
