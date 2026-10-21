@@ -4,7 +4,7 @@ import {mkdtempSync,rmSync,writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {RECOVERY_UNITS} from '../services/resources/interactive-lease-recovery.mjs';
-import {requireInitialNativeServices} from '../installer/interactive-maintenance-native.mjs';
+import {parseNativeMaintenanceState,requireInitialNativeServices} from '../installer/interactive-maintenance-native.mjs';
 
 test('Native command skips loaded-state preflight when a prior journal needs restoration',()=>{
  const root=mkdtempSync(join(tmpdir(),'localai-native-maintenance-')),journal=join(root,'maintenance.json');
@@ -16,4 +16,9 @@ test('Native command skips loaded-state preflight when a prior journal needs res
   assert.equal(requireInitialNativeServices({journal,control}),true);
   assert.deepEqual(calls,[]);
  }finally{rmSync(root,{recursive:true,force:true});}
+});
+
+test('Native state capture refuses a failed unit before it can be journaled as inactive',()=>{
+ assert.throws(()=>parseNativeMaintenanceState('LoadState=loaded\nActiveState=failed\nUnitFileState=enabled\n'),/interactive_maintenance_state_unavailable/);
+ assert.deepEqual(parseNativeMaintenanceState('LoadState=loaded\nActiveState=active\nUnitFileState=enabled\n'),{available:true,active:true,enabled:true});
 });

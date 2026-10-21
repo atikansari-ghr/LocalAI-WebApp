@@ -14,21 +14,26 @@ export function requireInitialNativeServices({journal,control}){
  return false;
 }
 
+export function parseNativeMaintenanceState(text){
+ if(typeof text!=='string'||text.length>4096)throw new Error('interactive_maintenance_state_unavailable');
+ const rows=text.trim().split('\n'),fields=new Map();
+ for(const row of rows){const at=row.indexOf('=');if(at<1||fields.has(row.slice(0,at)))throw new Error('interactive_maintenance_state_unavailable');fields.set(row.slice(0,at),row.slice(at+1));}
+ if(fields.size!==3||!['loaded','not-found'].includes(fields.get('LoadState')))throw new Error('interactive_maintenance_state_unavailable');
+ if(fields.get('LoadState')==='not-found'){
+  if(fields.get('ActiveState')!=='inactive')throw new Error('interactive_maintenance_state_unavailable');
+  return {available:false,active:false,enabled:false};
+ }
+ if(!['active','inactive'].includes(fields.get('ActiveState'))||!['enabled','disabled'].includes(fields.get('UnitFileState')))throw new Error('interactive_maintenance_state_unavailable');
+ return {available:true,active:fields.get('ActiveState')==='active',enabled:fields.get('UnitFileState')==='enabled'};
+}
+
 export function createNativeMaintenanceControl({units}={}){
  const names=assertInteractiveMaintenanceUnits(units),allowed=new Set(names);
  const check=unit=>{if(!allowed.has(unit))throw new TypeError('invalid_interactive_maintenance_units');};
  function capture(unit){
   check(unit);
   const text=systemctl('show',unit,'--property=LoadState','--property=ActiveState','--property=UnitFileState','--no-pager');
-  const rows=text.trim().split('\n'),fields=new Map();
-  for(const row of rows){const at=row.indexOf('=');if(at<1||fields.has(row.slice(0,at)))throw new Error('interactive_maintenance_state_unavailable');fields.set(row.slice(0,at),row.slice(at+1));}
-  if(fields.size!==3||!['loaded','not-found'].includes(fields.get('LoadState')))throw new Error('interactive_maintenance_state_unavailable');
-  if(fields.get('LoadState')==='not-found'){
-   if(fields.get('ActiveState')!=='inactive')throw new Error('interactive_maintenance_state_unavailable');
-   return {available:false,active:false,enabled:false};
-  }
-  if(!['active','inactive','failed'].includes(fields.get('ActiveState'))||!['enabled','disabled'].includes(fields.get('UnitFileState')))throw new Error('interactive_maintenance_state_unavailable');
-  return {available:true,active:fields.get('ActiveState')==='active',enabled:fields.get('UnitFileState')==='enabled'};
+  return parseNativeMaintenanceState(text);
  }
  return Object.freeze({
   capture,
