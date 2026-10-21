@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
-import {mkdtempSync,rmSync} from 'node:fs';
+import {existsSync,mkdtempSync,rmSync} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {fileURLToPath} from 'node:url';
@@ -21,8 +21,11 @@ if(process.argv[2]==='child'){
  try{
   const bypass=spawnSync(process.execPath,[file,'child',installPath,runtimePath],{encoding:'utf8'});
   assert.notEqual(bypass.status,0);
-  const held=spawnSync('/bin/bash',['-c','exec 9>"$1"; flock -n 9; exec 8>"$2"; flock -n 8; exec "$3" "$4" child "$1" "$2"','_',installPath,runtimePath,process.execPath,file],{encoding:'utf8'});
+  const opened=spawnSync('/bin/bash',['-c','exec 9>"$1"; exec 8>"$2"; exec "$3" "$4" child "$1" "$2"','_',installPath,runtimePath,process.execPath,file],{cwd:dir,encoding:'utf8'});
+  assert.equal(opened.status,0,opened.stderr);assert.match(opened.stdout,/held/);
+  const held=spawnSync('/bin/bash',['-c','exec 9>"$1"; flock -n 9; exec 8>"$2"; flock -n 8; exec "$3" "$4" child "$1" "$2"','_',installPath,runtimePath,process.execPath,file],{cwd:dir,encoding:'utf8'});
   assert.equal(held.status,0,held.stderr);assert.match(held.stdout,/held/);
-  process.stdout.write(JSON.stringify({gate:'maintenance-lock-ownership',directBypassRejected:true,inheritedLocksVerified:true})+'\n');
+  assert.equal(existsSync(join(dir,'8')),false);assert.equal(existsSync(join(dir,'9')),false);
+  process.stdout.write(JSON.stringify({gate:'maintenance-lock-ownership',directBypassRejected:true,inheritedLocksAcquired:true,inheritedLocksVerified:true})+'\n');
  }finally{rmSync(dir,{recursive:true,force:true});}
 }
