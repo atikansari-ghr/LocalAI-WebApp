@@ -52,6 +52,6 @@
 - [x] Create disposable synthetic services and an interrupted marker; show a running/unmasked unit prevents recovery.
 - [x] Runtime-mask and stop only vendor-location synthetic services, recover the marker, and show a document claim can resume.
 - [x] Verify the real gateway PID, package database and real service states remain unchanged; remove synthetic resources.
-- [ ] Run documentation checks and required CI, update draft PR #5, and keep Phase 4 blocked on live gateway wiring and other gates.
+- [x] Run documentation checks and required CI, update draft PR #5, and keep Phase 4 blocked on live gateway wiring and other gates.
 
 Ruling: A runtime mask does not override this installation's unit files in `/etc/systemd/system`; a synthetic `/etc` fixture proved the verifier rejects that state. The native success proof uses disposable units in `/usr/lib/systemd/system`, where a runtime mask takes precedence. Independent review also found a restart race between the final status read and marker removal. The standalone production recovery entrypoint was removed. A journaled workflow must hold effective masks and exclude concurrent unit changes throughout recovery before a real marker can be cleared; the gate remains blocked.
