@@ -13,6 +13,7 @@ function selectedUnits(units){
  if(process.env.TARGET_TEST_LXC!=='disposable'||process.platform!=='linux'||own()!==0||!match||units.some((unit,index)=>unit!==`localai-recovery-${match[1]}-${['gateway','chat','embedding','supervisor'][index]}.service`))throw fail('invalid_interactive_maintenance_units');
  return Object.freeze([...units]);
 }
+export const assertInteractiveMaintenanceUnits=selectedUnits;
 function safeDirectory(path,{privateDirectory=false}={}){
  if(typeof path!=='string'||!isAbsolute(path)||resolve(path)!==path||own()===undefined)throw fail('unsafe_interactive_maintenance_journal_directory');
  const state=lstatSync(path);
