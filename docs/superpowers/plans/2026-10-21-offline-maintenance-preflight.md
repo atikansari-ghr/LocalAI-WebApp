@@ -10,5 +10,5 @@
 
 - [x] Write failing parser tests for queued jobs, pending reload and absent/malformed fields.
 - [x] Require empty `Job` and `NeedDaemonReload=no` in each of the two full systemd passes.
-- [ ] Run focused, full Windows and Debian suites and the native disposable recovery proof.
-- [ ] Record the checkpoint and CI results in draft PR #5. Keep the full Phase 4 gate blocked on journaled exclusive maintenance, installed-service wiring and the remaining release gates.
+- [x] Run focused, full Windows and Debian suites and the native disposable recovery proof.
+- [x] Record the checkpoint and CI results in draft PR #5. Keep the full Phase 4 gate blocked on journaled exclusive maintenance, installed-service wiring and the remaining release gates.
