@@ -8,9 +8,11 @@
 
 **Executor access decision:** A queue-wide claim operation on the group-accessible document socket would reveal the next owner's decrypted report and claim token to any `localai` process. The prototype was rejected in review and removed before commit. A future bridge must bind claims to an authorized job identity or use a separately protected executor capability, and must hold the interactive lease through model completion.
 
+**Candidate bridge:** The private store now derives a purpose-separated claim capability from its vault and includes it only on the first internal enqueue receipt, never status or an idempotent replay. A private socket claim must provide the exact job ID, namespace, scope and capability. Neither the socket nor the store/runner exposes a queue-wide claim. The eventual public HTTP handler must never return the capability. An executor still needs protected crash-safe receipt retention and the real interactive lease before this candidate may consume production jobs.
+
 ## Tasks
 
 - [x] RED→GREEN private durable queue: validate schema and parser/OCR evidence before enqueue, bind owner/scope/idempotency to the request, encrypt inputs and results, and reject incompatible existing database files.
 - [x] RED→GREEN claim/finalization and restart behavior: claim tokens prevent late writes, interrupted model calls become visible failures only after interactive recovery, and owners cannot read another owner's result.
-- [ ] Wire a serialized private runner to the qualified inference admission lease, then exercise actual restart/cancellation on disposable Debian without activating a public route. The source-only runner, real-model encrypted persistence proof, durable supervisor queue submission/status and synthetic process-crash proof pass. Supervisor-to-inference execution, cancellation and integrated lease recovery remain open.
+- [ ] Wire a serialized private runner to the qualified inference admission lease, then exercise actual restart/cancellation on disposable Debian without activating a public route. The source-only runner, real-model encrypted persistence proof, durable supervisor queue and receipt-bound private claim/completion pass synthetic checks. Gateway-side scheduling, lease ownership, cancellation and integrated lease recovery remain open.
 - [ ] Review full source branch, run Windows/Debian/CI/docs gates, record remaining installed/quality/release blockers and keep the PR draft.

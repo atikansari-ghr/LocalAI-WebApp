@@ -32,7 +32,7 @@ try{
  const vault=initializeVault(join(dir,'structured.key'),{encryptedStateExists:false});
  store=openStructuredJobStore(join(dir,'structured.sqlite'),{vault});
  const job=store.enqueue({namespace:'user:proof',scope:'private',idempotencyKey:'native_invoice_12345',report,schema,expiresAt:Date.now()+86400000});
- const runner=createStructuredJobRunner({store,barrier,generateCandidate:createStructuredInferenceGenerator({inference:observed})});
+ const runner=createStructuredJobRunner({store,receipt:{id:job.id,namespace:'user:proof',scope:'private',claimCapability:job.claimCapability},barrier,generateCandidate:createStructuredInferenceGenerator({inference:observed})});
  const completed=await runner.step();assert.equal(completed.id,job.id);assert.equal(completed.status,'complete');
  store.close();store=null;
  const reopened=openStructuredJobStore(join(dir,'structured.sqlite'),{vault:openVault(join(dir,'structured.key'))});

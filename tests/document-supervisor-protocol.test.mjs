@@ -47,3 +47,15 @@ test('Structured requests use only the private scoped queue and reject extra fie
  for(const invalid of [{...submit,path:'/etc/passwd'},{...submit,scope:'../other'},{...submit,report:{...report,extra:'x'.repeat(131072)}},{op:'structured-status',id,namespace:'user:owner',scope:'private',extra:true}])assert.throws(()=>dispatchDocumentMessage(invalid,context));
  assert.equal(calls.length,3);
 });
+
+test('Structured execution socket requires a receipt-bound claim and bounded completion',()=>{
+ const context=fixture(),calls=[];
+ context.structuredStore={claimOwned:input=>{calls.push(['claimOwned',input]);return {id,token:'a'.repeat(43)};},complete:(...args)=>{calls.push(['complete',...args]);return {id,status:'complete'};}};
+ const claim={op:'claim-owned-structured',id,namespace:'user:owner',scope:'private',claimCapability:'a'.repeat(64)};
+ assert.equal(dispatchDocumentMessage(claim,context).id,id);
+ assert.deepEqual(calls[0],['claimOwned',{id,namespace:'user:owner',scope:'private',claimCapability:'a'.repeat(64)}]);
+ assert.equal(dispatchDocumentMessage({op:'complete-structured',id,token:'a'.repeat(43),modelText:'{"fields":{}}'},context).status,'complete');
+ for(const message of [{op:'claim-owned-structured'},{...claim,extra:true},{...claim,namespace:'user:../owner'},{...claim,claimCapability:'short'},{op:'complete-structured',id,token:'short',modelText:'{}'},{op:'complete-structured',id,token:'a'.repeat(43),modelText:'x'.repeat(32769)}])assert.throws(()=>dispatchDocumentMessage(message,context));
+ assert.equal(calls.length,2);
+ assert.throws(()=>dispatchDocumentMessage({op:'claim-structured'},context));
+});

@@ -1,5 +1,5 @@
 import {DatabaseSync} from 'node:sqlite';
-import {createCipheriv,createDecipheriv,createHash,randomBytes,randomUUID} from 'node:crypto';
+import {createCipheriv,createDecipheriv,createHash,randomBytes,randomUUID,timingSafeEqual} from 'node:crypto';
 import {chmodSync,lstatSync} from 'node:fs';
 import {dirname,resolve} from 'node:path';
 import {validateDocumentSchema} from './schema.mjs';
@@ -46,7 +46,17 @@ export function openStructuredJobStore(path,{vault,now=Date.now}={}){
  }catch(error){db.close();throw error;}
  const keyFor=row=>Buffer.from(vault.open(row.key_envelope,'structured-job-key:'+row.id),'base64url');
  const select=db.prepare('SELECT * FROM structured_jobs WHERE id=? AND namespace=? AND scope=?');
+ const capabilityFor=(id,namespace,scope)=>vault.digest(JSON.stringify([id,namespace,scope]),'structured-claim-capability-v1');
+ const receipt=row=>Object.freeze({...visible(row),claimCapability:capabilityFor(row.id,row.namespace,row.scope)});
  function transaction(work){db.exec('BEGIN IMMEDIATE');try{const value=work();db.exec('COMMIT');return value;}catch(error){if(db.isTransaction)db.exec('ROLLBACK');throw error;}}
+ function take(row,at){
+  if(!row)return null;
+  const input=JSON.parse(decrypt(keyFor(row),row.id,'input',row.input_nonce,row.input_body,row.input_tag).toString('utf8'));
+  const token=randomBytes(32).toString('base64url'),hash=createHash('sha256').update(token).digest('hex');
+  const changed=db.prepare("UPDATE structured_jobs SET status='running',claim_hash=?,updated_at=? WHERE id=? AND status='queued' AND expires_at>?").run(hash,at,row.id,at).changes;
+  if(changed!==1)throw invalid('structured_claim_conflict');
+  return Object.freeze({id:row.id,namespace:row.namespace,scope:row.scope,report:input.report,schema:input.schema,token});
+ }
  return Object.freeze({
   enqueue({namespace,scope,idempotencyKey,report,schema:input,expiresAt}={}){
    const at=now();if(!validNamespace(namespace)||!validScope(scope)||typeof idempotencyKey!=='string'||!/^[A-Za-z0-9_-]{16,128}$/.test(idempotencyKey)||!Number.isSafeInteger(at)||!Number.isSafeInteger(expiresAt)||expiresAt<=at||expiresAt>at+7*86400000)throw new TypeError('invalid_structured_job');
@@ -66,17 +76,15 @@ export function openStructuredJobStore(path,{vault,now=Date.now}={}){
     }
     const id=randomUUID(),key=randomBytes(32),sealed=encrypt(key,id,'input',payload),envelope=vault.seal(key.toString('base64url'),'structured-job-key:'+id);
     db.prepare('INSERT INTO structured_jobs(id,namespace,scope,idempotency_hash,request_hash,status,created_at,updated_at,expires_at,key_envelope,input_nonce,input_body,input_tag) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)').run(id,namespace,scope,idempotencyHash,requestHash,'queued',at,at,expiresAt,envelope,sealed.nonce,sealed.body,sealed.tag);
-    return visible(select.get(id,namespace,scope));
+    return receipt(select.get(id,namespace,scope));
    });
   },
   get(id,namespace,scope){if(!validNamespace(namespace)||!validScope(scope))return null;const row=select.get(id,namespace,scope);return row?.expires_at>now()?visible(row):null;},
-  claim(){return transaction(()=>{
-   const row=db.prepare("SELECT * FROM structured_jobs WHERE status='queued' AND expires_at>? ORDER BY created_at,id LIMIT 1").get(now());if(!row)return null;
-   const input=JSON.parse(decrypt(keyFor(row),row.id,'input',row.input_nonce,row.input_body,row.input_tag).toString('utf8'));
-   const token=randomBytes(32).toString('base64url'),hash=createHash('sha256').update(token).digest('hex');
-   db.prepare("UPDATE structured_jobs SET status='running',claim_hash=?,updated_at=? WHERE id=? AND status='queued'").run(hash,now(),row.id);
-   return Object.freeze({id:row.id,namespace:row.namespace,scope:row.scope,report:input.report,schema:input.schema,token});
-  });},
+  claimOwned({id,namespace,scope,claimCapability}={}){
+   if(typeof id!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id)||!validNamespace(namespace)||!validScope(scope)||typeof claimCapability!=='string'||!/^[a-f0-9]{64}$/.test(claimCapability))return null;
+   if(!timingSafeEqual(Buffer.from(claimCapability,'hex'),Buffer.from(capabilityFor(id,namespace,scope),'hex')))return null;
+   return transaction(()=>{const at=now();return take(db.prepare("SELECT * FROM structured_jobs WHERE id=? AND namespace=? AND scope=? AND status='queued' AND expires_at>?").get(id,namespace,scope,at),at);});
+  },
   complete(id,token,modelText){
    if(typeof token!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(token))throw invalid('structured_claim_invalid');
    return transaction(()=>{

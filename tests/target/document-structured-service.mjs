@@ -35,9 +35,16 @@ try{
  const job=await call(submit);assert.equal(job.status,'queued');assert.equal((await call(submit)).id,job.id);
  assert.equal(await call({op:'structured-status',id:job.id,namespace:'user:other',scope:'private'}),null);
  assert.equal((await call({op:'structured-status',id:job.id,namespace:'user:proof',scope:'private'})).status,'queued');
+ const receipt={op:'claim-owned-structured',id:job.id,namespace:'user:proof',scope:'private',claimCapability:job.claimCapability};
+ assert.equal(await call({...receipt,namespace:'user:other'}),null);
+ assert.equal(await call({...receipt,claimCapability:'0'.repeat(64)}),null);
+ const claim=await call(receipt);assert.equal(claim.id,job.id);assert.equal(claim.report.units[0].text,'Private invoice INV-42');
+ assert.equal((await call({op:'complete-structured',id:claim.id,token:claim.token,modelText:'{"fields":{"invoice":[{"value":"INV-42","evidenceIds":["u0001"]}]}}'})).status,'complete');
+ assert.equal((await call({op:'structured-status',id:job.id,namespace:'user:proof',scope:'private'})).result.fields.invoice.value,'INV-42');
+ assert.equal(await call({op:'structured-status',id:job.id,namespace:'user:other',scope:'private'}),null);
  await exec('/usr/bin/systemctl',['stop',unit],{timeout:15000});started=false;
  const store=openStructuredJobStore(join(stateDir,'structured.sqlite'),{vault:openVault(join(stateDir,'master.key'))});
- try{assert.equal(store.get(job.id,'user:proof','private').status,'queued');}finally{store.close();}
+ try{assert.equal(store.get(job.id,'user:proof','private').status,'complete');assert.equal(store.result(job.id,'user:proof','private').fields.invoice.value,'INV-42');}finally{store.close();}
  assert.deepEqual({gateway:await show('localai.service'),chat:await show('localai-chat.service'),embedding:await show('localai-embedding.service'),packages:digest()},before);
- process.stdout.write(JSON.stringify({gate:'native-structured-systemd-service',localaiAccountAccess:true,restrictedService:true,scopeIsolation:true,durable:true,liveServicesAndPackagesUnchanged:true,activated:false})+'\n');
+ process.stdout.write(JSON.stringify({gate:'native-structured-systemd-service',localaiAccountAccess:true,restrictedService:true,scopeIsolation:true,ownerBoundClaim:true,durable:true,liveServicesAndPackagesUnchanged:true,activated:false})+'\n');
 }finally{if(started)await exec('/usr/bin/systemctl',['stop',unit],{timeout:15000});assert.equal(await show(unit),'0');rmSync(stateDir,{recursive:true,force:true});}

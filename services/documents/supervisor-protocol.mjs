@@ -23,6 +23,18 @@ export function dispatchDocumentMessage(message,{store,runner,structuredStore,no
   const job=structuredStore.get(message.id,message.namespace,message.scope);if(!job)return null;
   return {...job,...job.status==='complete'?{result:structuredStore.result(message.id,message.namespace,message.scope)}:{}};
  }
+ if(message?.op==='claim-owned-structured'){
+  if(!structuredStore||typeof structuredStore.claimOwned!=='function')throw invalid();
+  exact(message,['op','id','namespace','scope','claimCapability'],['id','namespace','scope','claimCapability']);owner(message);
+  if(!jobId(message.id)||typeof message.claimCapability!=='string'||!/^[a-f0-9]{64}$/.test(message.claimCapability))throw invalid();
+  return structuredStore.claimOwned({id:message.id,namespace:message.namespace,scope:message.scope,claimCapability:message.claimCapability});
+ }
+ if(message?.op==='complete-structured'){
+  if(!structuredStore||typeof structuredStore.complete!=='function')throw invalid();
+  exact(message,['op','id','token','modelText'],['id','token','modelText']);
+  if(!jobId(message.id)||typeof message.token!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(message.token)||typeof message.modelText!=='string'||Buffer.byteLength(message.modelText)>32768)throw invalid();
+  return structuredStore.complete(message.id,message.token,message.modelText);
+ }
  if(message?.op==='submit'){
   exact(message,['op','namespace','scope','kind','idempotencyKey','name','mime','content_base64','options'],['namespace','scope','kind','idempotencyKey','name','mime','content_base64']);owner(message);
   if(!['ocr','extract'].includes(message.kind)||typeof message.idempotencyKey!=='string'||!/^[A-Za-z0-9_-]{16,128}$/.test(message.idempotencyKey)||typeof message.name!=='string'||message.name.length<1||message.name.length>255||/[\\/\x00-\x1f\x7f]/.test(message.name)||typeof message.mime!=='string'||!/^[a-z0-9.+-]+\/[a-z0-9.+-]+$/.test(message.mime))throw invalid();

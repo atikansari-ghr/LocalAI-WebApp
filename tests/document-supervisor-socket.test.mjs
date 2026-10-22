@@ -7,6 +7,8 @@ import {createConnection} from 'node:net';
 import {createDocumentSupervisorSocket} from '../services/documents/supervisor-socket.mjs';
 import {initializeVault} from '../packages/auth/crypto.mjs';
 import {openStructuredJobStore} from '../services/documents/structured-jobs.mjs';
+import {createStructuredJobRunner} from '../services/documents/structured-runner.mjs';
+import {callDocumentSupervisor} from '../services/documents/supervisor-client.mjs';
 
 test('Private Unix socket accepts one bounded frame and closes after a response',{skip:process.platform==='win32'},async()=>{
  const dir=mkdtempSync(join(tmpdir(),'localai-doc-socket-')),path=join(dir,'doc.sock');let calls=0;
@@ -62,5 +64,14 @@ test('Private socket persists structured jobs and enforces owner scope across re
   server=await createDocumentSupervisorSocket({socketPath:path,store,runner,structuredStore});
   assert.equal((await exchange({op:'structured-status',id:first.data.id,namespace:'user:owner',scope:'private'})).data.status,'queued');
   assert.equal((await exchange({op:'structured-status',id:first.data.id,namespace:'user:owner',scope:'other'})).data,null);
+  const receipt={op:'claim-owned-structured',id:first.data.id,namespace:'user:owner',scope:'private',claimCapability:first.data.claimCapability};
+  assert.equal((await exchange({...receipt,namespace:'user:other'})).data,null);
+  assert.equal((await exchange({...receipt,claimCapability:'0'.repeat(64)})).data,null);
+  await assert.rejects(callDocumentSupervisor({op:'claim-structured'},{socketPath:path}),/invalid_document_supervisor_message/);
+  const remote={claimOwned:claimed=>callDocumentSupervisor({op:'claim-owned-structured',...claimed},{socketPath:path}),complete:(id,token,modelText)=>callDocumentSupervisor({op:'complete-structured',id,token,modelText},{socketPath:path})};
+  const executor=createStructuredJobRunner({store:remote,receipt,barrier:{isClear:()=>true},generateCandidate:async ({report})=>{assert.equal(report.units[0].text,'Private invoice INV-42');return '{"fields":{"invoice":[{"value":"INV-42","evidenceIds":["u0001"]}]}}';}});
+  assert.equal((await executor.step()).status,'complete');
+  assert.equal((await exchange({op:'structured-status',id:first.data.id,namespace:'user:owner',scope:'private'})).data.result.fields.invoice.value,'INV-42');
+  assert.equal((await exchange({op:'structured-status',id:first.data.id,namespace:'user:other',scope:'private'})).data,null);
  }finally{if(server)await new Promise(resolve=>server.close(resolve));structuredStore?.close();rmSync(dir,{recursive:true,force:true});}
 });
