@@ -14,6 +14,8 @@
 
 **Protected handoff candidate:** A separate receipt socket in a root-owned directory with mode 0750 and a dedicated executor group can disclose only one pending receipt at a time. The existing `localai` group socket has no receipt-enumeration command. A disposable Debian proof currently uses the `nobody` group solely as a stand-in for the future dedicated executor identity; the `localai` account was denied by the kernel's directory permissions. This source-only primitive is not wired to the supervisor or installer, and it does not start an executor.
 
+**Rejected adapter prototype:** A fixed executor-side adapter and one-process integration test joined the receipt socket to the group-accessible document socket, but review found that remote completion could commit after lease loss. A dedicated executor would also need broad `localai` group membership to traverse the current document socket directory. The adapter and test were removed before commit. Next implementation must validate lease ownership at the supervisor's completion transaction and provide a narrow executor claim/completion channel under its own group.
+
 ## Tasks
 
 - [x] RED→GREEN private durable queue: validate schema and parser/OCR evidence before enqueue, bind owner/scope/idempotency to the request, encrypt inputs and results, and reject incompatible existing database files.
