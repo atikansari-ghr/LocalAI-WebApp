@@ -60,4 +60,8 @@ A source-only adapter prototype joined the reconstructed receipt socket to owner
 
 An internal structured-store snapshot regression first failed because the store exposed no online backup operation. The implementation uses SQLite's online backup on the open WAL connection, checks schema identity and full integrity on the copy, reserves a fresh owner-private destination, and removes failed copies. The focused test restores committed work using the same vault, rejects overwrite and source replacement, and rejects a world-writable destination directory on POSIX. This does not include the vault key or coordinate the document/account stores, so it is not a qualified backup or restore gate.
 
-The Windows suite passed 334 tests (290 passed, 44 Linux-only skipped), documentation checks passed, and focused independent review found no issues in this candidate. Debian and current-commit CI results must be recorded separately after running the committed source.
+At `4ea70c7`, the Windows suite passed 334 tests (290 passed, 44 Linux-only skipped). The committed source passed 334/334 tests and documentation checks on the disposable Debian 13 LXC. Focused independent review found no issues in this candidate. Current-commit CI remains a separate gate.
+
+The document-job store then gained the same isolated online snapshot primitive. Its regression first failed on the missing method, then restored a committed WAL job through the matching vault and denied source replacement, existing destination overwrite and world-writable POSIX destination directories. This is also source-only; taking the two snapshots independently does not make a consistent multi-store restore point.
+
+The Windows suite passed 335 tests (291 passed, 44 Linux-only skipped), documentation checks passed, and focused independent review found no issues in the document-store candidate. Debian and current-commit CI still require separate results.

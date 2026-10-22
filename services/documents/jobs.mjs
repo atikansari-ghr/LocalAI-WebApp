@@ -1,6 +1,6 @@
-import {DatabaseSync} from 'node:sqlite';
+import {DatabaseSync,backup} from 'node:sqlite';
 import {randomBytes,randomUUID,createCipheriv,createDecipheriv,createHash} from 'node:crypto';
-import {lstatSync,chmodSync} from 'node:fs';
+import {lstatSync,chmodSync,openSync,closeSync,unlinkSync} from 'node:fs';
 import {dirname,resolve} from 'node:path';
 
 const MAX_INPUT=10*1024**2,MAX_RESULT=4*1024**2;
@@ -95,6 +95,18 @@ export function openDocumentJobStore(path,{vault,now=Date.now}={}){
   finishCancellation(id,token,{nativeCleanupConfirmed}={}){if(typeof token!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(token))throw invalid('job_claim_invalid');if(nativeCleanupConfirmed!==true)throw invalid('native_cleanup_required');const hash=createHash('sha256').update(token).digest('hex');return transaction(()=>{if(db.prepare("UPDATE document_jobs SET status='cancelled',claim_hash=NULL,updated_at=? WHERE id=? AND claim_hash=? AND status='cancelling'").run(now(),id,hash).changes!==1)throw invalid('job_claim_invalid');if(db.prepare('SELECT id FROM document_deletions WHERE id=?').get(id))db.prepare('DELETE FROM document_jobs WHERE id=?').run(id);});},
   recoverInterrupted({nativeCleanupConfirmed}={}){if(nativeCleanupConfirmed!==true)throw invalid('native_cleanup_required');return transaction(()=>{const changed=db.prepare("UPDATE document_jobs SET status=CASE status WHEN 'cancelling' THEN 'cancelled' ELSE 'failed' END,claim_hash=NULL,error_code=CASE status WHEN 'running' THEN 'interrupted_after_restart' ELSE NULL END,updated_at=? WHERE status IN ('running','cancelling')").run(now()).changes;db.prepare('DELETE FROM document_jobs WHERE id IN (SELECT id FROM document_deletions)').run();return changed;});},
   purgeExpired(){return db.prepare("DELETE FROM document_jobs WHERE expires_at<=? AND status NOT IN ('running','cancelling')").run(now()).changes;},
+  async backup(destination){
+   if(typeof destination!=='string'||!destination||resolve(destination)===absolute)throw new TypeError('invalid_job_backup_path');
+   const target=resolve(destination),directory=lstatSync(dirname(target));
+   if(!directory.isDirectory()||process.platform!=='win32'&&(directory.mode&0o077)!==0)throw invalid('unsafe_job_backup_directory');
+   closeSync(openSync(target,'wx',0o600));
+   try{
+    await backup(db,target);
+    const copy=new DatabaseSync(target,{readOnly:true,allowExtension:false});
+    try{verifyIdentity(copy);if(copy.prepare('PRAGMA integrity_check').get().integrity_check!=='ok')throw invalid('job_backup_corrupt');}
+    finally{copy.close();}
+   }catch(error){unlinkSync(target);throw error;}
+  },
   close(){db.close();}
  });
 }

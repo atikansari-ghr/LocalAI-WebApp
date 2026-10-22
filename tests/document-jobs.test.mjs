@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync,readFileSync,readdirSync,rmSync,chmodSync} from 'node:fs';
+import {mkdtempSync,readFileSync,readdirSync,rmSync,chmodSync,mkdirSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
@@ -152,4 +152,17 @@ test('A verified private version-one job store upgrades without losing encrypted
  assert.equal(upgraded.get(job.id,'app:one','private').status,'queued');
  assert.deepEqual(upgraded.requestDelete(job.id,'app:one','private'),{deleted:true});upgraded.close();
  const check=new DatabaseSync(f.path,{readOnly:true});assert.equal(check.prepare('PRAGMA user_version').get().user_version,2);check.close();
+});
+
+test('online document snapshot restores committed WAL work and refuses unsafe overwrite',async t=>{
+ const f=fixture(t),store=openDocumentJobStore(f.path,{vault:f.vault,now:()=>1000});
+ const queued=store.enqueue(submission({bytes:Buffer.from('private committed WAL')})),snapshot=join(f.dir,'document-snapshot.sqlite');
+ await assert.rejects(store.backup(f.path),/invalid_job_backup_path/);
+ const unsafe=join(f.dir,'world-writable');mkdirSync(unsafe,{mode:0o777});if(process.platform!=='win32'){chmodSync(unsafe,0o777);await assert.rejects(store.backup(join(unsafe,'snapshot.sqlite')),/unsafe_job_backup_directory/);}
+ await store.backup(snapshot);
+ const copy=openDocumentJobStore(snapshot,{vault:f.vault,now:()=>1000});
+ assert.equal(copy.get(queued.id,'app:one','private').status,'queued');
+ assert.equal(copy.claim().bytes.toString(),'private committed WAL');copy.close();
+ const original=readFileSync(snapshot);await assert.rejects(store.backup(snapshot));
+ assert.deepEqual(readFileSync(snapshot),original);store.close();
 });
