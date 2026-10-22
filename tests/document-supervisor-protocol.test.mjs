@@ -33,3 +33,17 @@ test('Private delete requests cancellation before durable scoped deletion',()=>{
  assert.deepEqual(context.calls.slice(-2),[['cancel',id,'user:owner','private'],['requestDelete',id,'user:owner','private']]);
  assert.throws(()=>dispatchDocumentMessage({op:'delete',id,namespace:'user:owner',scope:'private',path:'/tmp'},context));
 });
+
+test('Structured requests use only the private scoped queue and reject extra fields',()=>{
+ const context=fixture(),calls=[];
+ context.structuredStore={enqueue:input=>{calls.push(['enqueue',input]);return {id,status:'queued'};},get:(...args)=>{calls.push(['get',...args]);return {id,status:'complete'};},result:(...args)=>{calls.push(['result',...args]);return {reviewRequired:true,fields:{invoice:{value:'INV-42'}}};}};
+ const report={document:{sha256:'a'.repeat(64)},units:[{text:'INV-42',source:{kind:'text'}}]};
+ const schema={schemaVersion:1,schemaId:'invoice',revision:1,schema:{type:'object',additionalProperties:false,properties:{invoice:{type:'string'}},required:['invoice']}};
+ const submit={op:'submit-structured',namespace:'user:owner',scope:'private',idempotencyKey:'abcdefghijklmnop',report,schema};
+ assert.equal(dispatchDocumentMessage(submit,context).status,'queued');
+ assert.equal(calls[0][1].namespace,'user:owner');assert.equal(calls[0][1].report,report);
+ assert.equal(dispatchDocumentMessage({op:'structured-status',id,namespace:'user:owner',scope:'private'},context).result.fields.invoice.value,'INV-42');
+ assert.deepEqual(calls.slice(-2),[['get',id,'user:owner','private'],['result',id,'user:owner','private']]);
+ for(const invalid of [{...submit,path:'/etc/passwd'},{...submit,scope:'../other'},{...submit,report:{...report,extra:'x'.repeat(131072)}},{op:'structured-status',id,namespace:'user:owner',scope:'private',extra:true}])assert.throws(()=>dispatchDocumentMessage(invalid,context));
+ assert.equal(calls.length,3);
+});

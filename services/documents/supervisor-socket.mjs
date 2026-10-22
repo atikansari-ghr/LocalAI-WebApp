@@ -8,7 +8,7 @@ const errorCode=error=>error instanceof TypeError?'invalid_document_supervisor_m
 
 // One newline-delimited JSON request per connection. The socket's parent and
 // owning group are supplied by systemd; gateway code cannot choose this path.
-export async function createDocumentSupervisorSocket({socketPath,store,runner,isStopping=()=>false,deadlineMs=15000}){
+export async function createDocumentSupervisorSocket({socketPath,store,runner,structuredStore,isStopping=()=>false,deadlineMs=15000}){
  if(process.platform==='win32'||typeof socketPath!=='string'||!socketPath.startsWith('/')||!store||!runner||!Number.isSafeInteger(deadlineMs)||deadlineMs<100||deadlineMs>15000)throw new TypeError('invalid_document_socket_configuration');
  const parent=lstatSync(dirname(socketPath));if(!parent.isDirectory()||parent.uid!==process.getuid()||parent.gid!==process.getgid()||(parent.mode&0o027)!==0)throw new Error('unsafe_document_socket_directory');
  const clients=new Set();
@@ -23,7 +23,7 @@ export async function createDocumentSupervisorSocket({socketPath,store,runner,is
    if(chunk.includes(10)){
     chunks.push(chunk);const buffer=Buffer.concat(chunks,bytes),end=buffer.indexOf(10);
     if(end!==buffer.length-1){reply({error:'invalid_document_supervisor_message'});return;}
-    try{if(isStopping())throw new Error('document_runner_stopping');const command=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(buffer.subarray(0,end)));reply({data:dispatchDocumentMessage(command,{store,runner})});}
+    try{if(isStopping())throw new Error('document_runner_stopping');const command=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(buffer.subarray(0,end)));reply({data:dispatchDocumentMessage(command,{store,runner,structuredStore})});}
     catch(error){reply({error:errorCode(error)});}
    }else chunks.push(chunk);
   });
