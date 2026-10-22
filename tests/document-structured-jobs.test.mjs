@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync,readFileSync,readdirSync,rmSync,chmodSync} from 'node:fs';
+import {mkdtempSync,readFileSync,readdirSync,rmSync,chmodSync,mkdirSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
@@ -110,5 +110,21 @@ test('root-owned queue reconstructs only live pending receipts after restart',t=
  assert.equal(store.claimOwned(pending[0]).id,first.id);
  assert.deepEqual(store.pendingReceipts(),[]);
  assert.throws(()=>store.pendingReceipts({limit:0}),/invalid_structured_receipt_limit/);
+ store.close();
+});
+
+test('online structured snapshot includes committed WAL writes and never overwrites a prior snapshot',async t=>{
+ const f=fixture(t),store=openStructuredJobStore(f.path,{vault:f.vault,now:()=>1000});
+ const queued=store.enqueue(request()),snapshot=join(f.dir,'structured-snapshot.sqlite');
+ await assert.rejects(store.backup(f.path),/invalid_structured_backup_path/);
+ const unsafe=join(f.dir,'world-writable');mkdirSync(unsafe,{mode:0o777});if(process.platform!=='win32'){chmodSync(unsafe,0o777);await assert.rejects(store.backup(join(unsafe,'snapshot.sqlite')),/unsafe_structured_backup_directory/);}
+ await store.backup(snapshot);
+ const copy=openStructuredJobStore(snapshot,{vault:f.vault,now:()=>1000});
+ assert.equal(copy.get(queued.id,'app:one','private').status,'queued');
+ assert.equal(copy.claimOwned(owned(queued)).report.units[0].text,'Private invoice INV-42');
+ copy.close();
+ const original=readFileSync(snapshot);
+ await assert.rejects(store.backup(snapshot));
+ assert.deepEqual(readFileSync(snapshot),original);
  store.close();
 });

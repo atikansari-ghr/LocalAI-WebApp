@@ -1,6 +1,6 @@
-import {DatabaseSync} from 'node:sqlite';
+import {DatabaseSync,backup} from 'node:sqlite';
 import {createCipheriv,createDecipheriv,createHash,randomBytes,randomUUID,timingSafeEqual} from 'node:crypto';
-import {chmodSync,lstatSync} from 'node:fs';
+import {chmodSync,closeSync,lstatSync,openSync,unlinkSync} from 'node:fs';
 import {dirname,resolve} from 'node:path';
 import {validateDocumentSchema} from './schema.mjs';
 import {prepareStructuredEvidence,assessStructuredCandidates} from './structured-extract.mjs';
@@ -107,6 +107,18 @@ export function openStructuredJobStore(path,{vault,now=Date.now}={}){
   result(id,namespace,scope){if(!validNamespace(namespace)||!validScope(scope))return null;const row=select.get(id,namespace,scope);if(!row||row.status!=='complete'||row.expires_at<=now())return null;return JSON.parse(decrypt(keyFor(row),id,'result',row.result_nonce,row.result_body,row.result_tag).toString('utf8'));},
   recoverInterrupted({interactiveRecoveryConfirmed}={}){if(interactiveRecoveryConfirmed!==true)throw invalid('interactive_recovery_required');return db.prepare("UPDATE structured_jobs SET status='failed',claim_hash=NULL,error_code='structured_interrupted',updated_at=? WHERE status='running'").run(now()).changes;},
   purgeExpired(){return db.prepare("DELETE FROM structured_jobs WHERE expires_at<=? AND status!='running'").run(now()).changes;},
+  async backup(destination){
+   if(typeof destination!=='string'||!destination||resolve(destination)===absolute)throw new TypeError('invalid_structured_backup_path');
+   const target=resolve(destination),directory=lstatSync(dirname(target));
+   if(!directory.isDirectory()||process.platform!=='win32'&&(directory.mode&0o077)!==0)throw invalid('unsafe_structured_backup_directory');
+   closeSync(openSync(target,'wx',0o600));
+   try{
+    await backup(db,target);
+    const copy=new DatabaseSync(target,{readOnly:true,allowExtension:false});
+    try{verifyIdentity(copy);if(copy.prepare('PRAGMA integrity_check').get().integrity_check!=='ok')throw invalid('structured_backup_corrupt');}
+    finally{copy.close();}
+   }catch(error){unlinkSync(target);throw error;}
+  },
   close(){db.close();}
  });
 }

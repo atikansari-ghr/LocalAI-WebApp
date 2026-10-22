@@ -4,6 +4,8 @@
 
 **Ruling:** Use a separate encrypted SQLite WAL store for this candidate rather than migrate the existing document-job database during Phase 4 development. This avoids a schema transition in the currently tested document queue; the cost is that backup, restore and eventual deployment must coordinate both stores atomically before activation.
 
+The structured-store online snapshot is an internal component primitive only. Before activation, quiesce both queues and their workers under one maintenance barrier, capture both SQLite stores plus the vault key and all required platform components, bind them in a durable manifest, verify an isolated restore and preserve deletion/tombstone semantics. A single-file snapshot cannot satisfy the coordinated backup gate.
+
 **Supervisor boundary:** The inactive root document supervisor now owns this store and accepts scoped submission/status on its local Unix socket. Its systemd sandbox has no network or model-credential access. The source-only model runner therefore remains outside that service until a separately qualified inference bridge and crash-safe recovery contract exist. No public route is enabled.
 
 **Executor access decision:** A queue-wide claim operation on the group-accessible document socket would reveal the next owner's decrypted report and claim token to any `localai` process. The prototype was rejected in review and removed before commit. A future bridge must bind claims to an authorized job identity or use a separately protected executor capability, and must hold the interactive lease through model completion.
