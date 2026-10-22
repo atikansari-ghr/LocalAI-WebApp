@@ -65,3 +65,9 @@ At `4ea70c7`, the Windows suite passed 334 tests (290 passed, 44 Linux-only skip
 The document-job store then gained the same isolated online snapshot primitive. Its regression first failed on the missing method, then restored a committed WAL job through the matching vault and denied source replacement, existing destination overwrite and world-writable POSIX destination directories. This is also source-only; taking the two snapshots independently does not make a consistent multi-store restore point.
 
 The Windows suite passed 335 tests (291 passed, 44 Linux-only skipped), documentation checks passed, and focused independent review found no issues in the document-store candidate. Debian and current-commit CI still require separate results.
+
+At `7889339`, the committed document-store source passed 335/335 tests and documentation checks on the disposable Debian 13 LXC. Both required CI jobs also passed. A follow-up RED test showed that SQLite integrity and schema alone accepted a snapshot made with wrong vault material. Each snapshot method now decrypts every copied input and any result with the active vault, rejects unreadable data, and removes the failed artifact. Focused tests also reopen completed results from both copies. This validates only the two private queue payloads, not a coordinated platform restore.
+
+Review then found that a completed row with all result ciphertext fields missing would bypass the decrypt scan. RED regressions reproduced successful backups of such unreadable rows in both queues. The checks now require a complete result tuple whenever a row is marked complete and remove the failed snapshot.
+
+The Windows suite passed 335 tests (291 passed, 44 Linux-only skipped), documentation checks passed, and focused re-review found no remaining Important findings. Debian and current-commit CI results require the committed source.

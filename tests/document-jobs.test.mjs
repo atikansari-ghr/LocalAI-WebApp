@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync,readFileSync,readdirSync,rmSync,chmodSync,mkdirSync} from 'node:fs';
+import {mkdtempSync,readFileSync,readdirSync,rmSync,chmodSync,mkdirSync,existsSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
@@ -156,13 +156,25 @@ test('A verified private version-one job store upgrades without losing encrypted
 
 test('online document snapshot restores committed WAL work and refuses unsafe overwrite',async t=>{
  const f=fixture(t),store=openDocumentJobStore(f.path,{vault:f.vault,now:()=>1000});
- const queued=store.enqueue(submission({bytes:Buffer.from('private committed WAL')})),snapshot=join(f.dir,'document-snapshot.sqlite');
+ const completed=store.enqueue(submission({bytes:Buffer.from('private committed WAL')})),snapshot=join(f.dir,'document-snapshot.sqlite');
+ const claim=store.claim();assert.equal(claim.id,completed.id);
+ store.complete(completed.id,claim.token,{text:'private restored result'},{nativeCleanupConfirmed:true});
+ const queued=store.enqueue(submission({idempotencyKey:'queued_key_12345'}));
  await assert.rejects(store.backup(f.path),/invalid_job_backup_path/);
  const unsafe=join(f.dir,'world-writable');mkdirSync(unsafe,{mode:0o777});if(process.platform!=='win32'){chmodSync(unsafe,0o777);await assert.rejects(store.backup(join(unsafe,'snapshot.sqlite')),/unsafe_job_backup_directory/);}
  await store.backup(snapshot);
  const copy=openDocumentJobStore(snapshot,{vault:f.vault,now:()=>1000});
  assert.equal(copy.get(queued.id,'app:one','private').status,'queued');
- assert.equal(copy.claim().bytes.toString(),'private committed WAL');copy.close();
+ assert.equal(copy.result(completed.id,'app:one','private').text,'private restored result');
+ assert.equal(copy.claim().id,queued.id);copy.close();
  const original=readFileSync(snapshot);await assert.rejects(store.backup(snapshot));
- assert.deepEqual(readFileSync(snapshot),original);store.close();
+ assert.deepEqual(readFileSync(snapshot),original);
+ const wrongVault=initializeVault(join(f.dir,'wrong.key'),{encryptedStateExists:false});
+ const wrong=openDocumentJobStore(f.path,{vault:wrongVault,now:()=>1000}),unreadable=join(f.dir,'unreadable.sqlite');
+ await assert.rejects(wrong.backup(unreadable),/job_backup_unreadable/);
+ assert.equal(existsSync(unreadable),false);wrong.close();
+ const raw=new DatabaseSync(f.path);raw.prepare('UPDATE document_jobs SET result_nonce=NULL,result_body=NULL,result_tag=NULL WHERE id=?').run(completed.id);raw.close();
+ const corrupt=join(f.dir,'missing-result.sqlite');
+ await assert.rejects(store.backup(corrupt),/job_backup_unreadable/);
+ assert.equal(existsSync(corrupt),false);store.close();
 });

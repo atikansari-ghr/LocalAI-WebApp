@@ -115,7 +115,20 @@ export function openStructuredJobStore(path,{vault,now=Date.now}={}){
    try{
     await backup(db,target);
     const copy=new DatabaseSync(target,{readOnly:true,allowExtension:false});
-    try{verifyIdentity(copy);if(copy.prepare('PRAGMA integrity_check').get().integrity_check!=='ok')throw invalid('structured_backup_corrupt');}
+    try{
+     verifyIdentity(copy);if(copy.prepare('PRAGMA integrity_check').get().integrity_check!=='ok')throw invalid('structured_backup_corrupt');
+     try{
+      for(const row of copy.prepare('SELECT id,status,key_envelope,input_nonce,input_body,input_tag,result_nonce,result_body,result_tag FROM structured_jobs').iterate()){
+       const key=keyFor(row);if(key.length!==32)throw invalid('structured_backup_unreadable');
+       decrypt(key,row.id,'input',row.input_nonce,row.input_body,row.input_tag);
+       if(row.status==='complete'&&(row.result_nonce===null||row.result_body===null||row.result_tag===null))throw invalid('structured_backup_unreadable');
+       if(row.result_nonce!==null||row.result_body!==null||row.result_tag!==null){
+        if(row.result_nonce===null||row.result_body===null||row.result_tag===null)throw invalid('structured_backup_unreadable');
+        decrypt(key,row.id,'result',row.result_nonce,row.result_body,row.result_tag);
+       }
+      }
+     }catch{throw invalid('structured_backup_unreadable');}
+    }
     finally{copy.close();}
    }catch(error){unlinkSync(target);throw error;}
   },
