@@ -25,14 +25,16 @@ const lease=await createInteractiveLeaseServer({socketPath,admission,barrier});
 let store;
 try{
  const leased=createInteractiveLeaseAdmission({socketPath,timeoutMs:60000});
- const inference=createInferenceClient({key,admission:leased,timeoutMs:60000,resources:()=>({availableBytes:resources().containerAvailableBytes})});
+ // The runner owns one lease from claim through completion; the inference
+ // client must not request a nested lease for this internal operation.
+ const inference=createInferenceClient({key,timeoutMs:60000,resources:()=>({availableBytes:resources().containerAvailableBytes})});
  const report=await createDocumentProcessor()({name:'invoice.txt',mime:'text/plain',bytes:Buffer.from('Invoice INV-42\nDate 2024-02-29\nTotal 120.50 SAR\nفاتورة INV-42\n','utf8')});
  const schema={schemaVersion:1,schemaId:'invoice-proof',revision:1,schema:{type:'object',additionalProperties:false,properties:{invoice:{type:'string',format:'identifier'},date:{type:'string',format:'date'},total:{type:'string',format:'amount'}},required:['invoice','date','total']}};
  const observed={chat:async(...args)=>{const reply=await inference.chat(...args);process.stderr.write('synthetic_model_reply='+JSON.stringify(reply.choices?.[0]?.message?.content)+'\n');return reply;}};
  const vault=initializeVault(join(dir,'structured.key'),{encryptedStateExists:false});
  store=openStructuredJobStore(join(dir,'structured.sqlite'),{vault});
  const job=store.enqueue({namespace:'user:proof',scope:'private',idempotencyKey:'native_invoice_12345',report,schema,expiresAt:Date.now()+86400000});
- const runner=createStructuredJobRunner({store,receipt:{id:job.id,namespace:'user:proof',scope:'private',claimCapability:job.claimCapability},barrier,generateCandidate:createStructuredInferenceGenerator({inference:observed})});
+ const runner=createStructuredJobRunner({store,receipt:{id:job.id,namespace:'user:proof',scope:'private',claimCapability:job.claimCapability},admission:leased,barrier,generateCandidate:createStructuredInferenceGenerator({inference:observed})});
  const completed=await runner.step();assert.equal(completed.id,job.id);assert.equal(completed.status,'complete');
  store.close();store=null;
  const reopened=openStructuredJobStore(join(dir,'structured.sqlite'),{vault:openVault(join(dir,'structured.key'))});

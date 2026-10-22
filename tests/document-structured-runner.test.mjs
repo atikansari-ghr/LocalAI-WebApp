@@ -75,3 +75,31 @@ test('cancellation during an asynchronous claim cannot reach model generation',a
  await assert.rejects(step,{name:'AbortError'});assert.equal(generated,false);
  await assert.rejects(runner.step(),/structured_recovery_required/);
 });
+
+test('one interactive lease spans remote claim, model generation and completion',async()=>{
+ const events=[];let leased=false;
+ const admission={runInteractive:async work=>{events.push('grant');leased=true;try{return await work(new AbortController().signal);}finally{leased=false;events.push('release');}}};
+ const store={claimOwned:async()=>{assert.equal(leased,true);events.push('claim');return {id:mockReceipt.id,token:'token',report,schema};},complete:async()=>{assert.equal(leased,true);events.push('complete');return {id:mockReceipt.id,status:'complete'};}};
+ const runner=createStructuredJobRunner({store,receipt:mockReceipt,admission,barrier:{isClear:()=>!leased},generateCandidate:async()=>{assert.equal(leased,true);events.push('model');return '{}';}});
+ assert.equal((await runner.step()).status,'complete');assert.deepEqual(events,['grant','claim','model','complete','release']);
+});
+
+test('failed lease admission does not claim or strand a receipt',async()=>{
+ let granted=false,claims=0;
+ const admission={runInteractive:async work=>{if(!granted)throw new Error('admission_unavailable');return work(new AbortController().signal);}};
+ const store={claimOwned:async()=>{claims++;return {id:mockReceipt.id,token:'token',report,schema};},complete:async()=>({status:'complete'})};
+ const runner=createStructuredJobRunner({store,receipt:mockReceipt,admission,barrier:{isClear:()=>true},generateCandidate:async()=>'{}'});
+ await assert.rejects(runner.step(),/admission_unavailable/);assert.equal(claims,0);
+ granted=true;assert.equal((await runner.step()).status,'complete');assert.equal(claims,1);
+});
+
+test('lease loss after claim blocks completion and requires recovery',async()=>{
+ const abort=new AbortController();let begin,completed=false;
+ const started=new Promise(resolve=>{begin=resolve;});
+ const admission={runInteractive:work=>work(abort.signal)};
+ const store={claimOwned:async()=>({id:mockReceipt.id,token:'token',report,schema}),complete:async()=>{completed=true;throw new Error('unexpected_completion');}};
+ const runner=createStructuredJobRunner({store,receipt:mockReceipt,admission,barrier:{isClear:()=>true},generateCandidate:({signal})=>{begin();return new Promise((_,reject)=>signal.addEventListener('abort',()=>reject(signal.reason),{once:true}));}});
+ const step=runner.step();await started;abort.abort(new Error('admission_lease_lost'));
+ await assert.rejects(step,/admission_lease_lost/);assert.equal(completed,false);
+ await assert.rejects(runner.step(),/structured_recovery_required/);
+});
