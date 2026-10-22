@@ -80,6 +80,12 @@ export function openStructuredJobStore(path,{vault,now=Date.now}={}){
    });
   },
   get(id,namespace,scope){if(!validNamespace(namespace)||!validScope(scope))return null;const row=select.get(id,namespace,scope);return row?.expires_at>now()?visible(row):null;},
+  // Root-owned startup/scheduler use only. Never expose this enumeration on
+  // the group-accessible supervisor socket or a public HTTP response.
+  pendingReceipts({limit=32}={}){
+   if(!Number.isSafeInteger(limit)||limit<1||limit>128)throw new TypeError('invalid_structured_receipt_limit');
+   return Object.freeze(db.prepare("SELECT id,namespace,scope FROM structured_jobs WHERE status='queued' AND expires_at>? ORDER BY created_at,id LIMIT ?").all(now(),limit).map(row=>Object.freeze({id:row.id,namespace:row.namespace,scope:row.scope,claimCapability:capabilityFor(row.id,row.namespace,row.scope)})));
+  },
   claimOwned({id,namespace,scope,claimCapability}={}){
    if(typeof id!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id)||!validNamespace(namespace)||!validScope(scope)||typeof claimCapability!=='string'||!/^[a-f0-9]{64}$/.test(claimCapability))return null;
    if(!timingSafeEqual(Buffer.from(claimCapability,'hex'),Buffer.from(capabilityFor(id,namespace,scope),'hex')))return null;

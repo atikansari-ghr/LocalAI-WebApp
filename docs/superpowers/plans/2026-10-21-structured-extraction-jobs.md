@@ -10,6 +10,8 @@
 
 **Candidate bridge:** The private store now derives a purpose-separated claim capability from its vault and includes it only on the first internal enqueue receipt, never status or an idempotent replay. A private socket claim must provide the exact job ID, namespace, scope and capability. Neither the socket nor the store/runner exposes a queue-wide claim. The eventual public HTTP handler must never return the capability. An executor still needs protected crash-safe receipt retention and the real interactive lease before this candidate may consume production jobs.
 
+**Restart candidate:** The root-owned store can rederive bounded live queued receipts after reopening its existing vault; no enumeration operation is available on the group-accessible socket. A disposable child-SIGKILL proof reconstructed a second queued receipt while an interrupted running claim stayed protected. The protected handoff and systemd scheduling contract are still unimplemented.
+
 ## Tasks
 
 - [x] RED→GREEN private durable queue: validate schema and parser/OCR evidence before enqueue, bind owner/scope/idempotency to the request, encrypt inputs and results, and reject incompatible existing database files.

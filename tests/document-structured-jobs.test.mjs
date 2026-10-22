@@ -96,3 +96,19 @@ test('owner-bound claim requires an unguessable receipt capability',t=>{
  store.complete(job.id,claim.token,'{"fields":{"invoice":[{"value":"INV-42","evidenceIds":["u0001"]}]}}');
  assert.equal(store.result(job.id,'app:one','private').fields.invoice.value,'INV-42');store.close();
 });
+
+test('root-owned queue reconstructs only live pending receipts after restart',t=>{
+ const f=fixture(t);let current=1000;let store=openStructuredJobStore(f.path,{vault:f.vault,now:()=>current});
+ const first=store.enqueue(request({idempotencyKey:'pending_first_12345'}));
+ const running=store.enqueue(request({idempotencyKey:'running_second_12345'}));store.claimOwned(owned(running));
+ store.enqueue(request({idempotencyKey:'expired_third_12345',expiresAt:1001}));store.close();
+ current=1002;store=openStructuredJobStore(f.path,{vault:f.vault,now:()=>current});
+ const pending=store.pendingReceipts({limit:1});
+ assert.deepEqual(pending,[{id:first.id,namespace:'app:one',scope:'private',claimCapability:first.claimCapability}]);
+ assert.equal(Object.hasOwn(pending[0],'report'),false);
+ assert.equal(Object.hasOwn(pending[0],'token'),false);
+ assert.equal(store.claimOwned(pending[0]).id,first.id);
+ assert.deepEqual(store.pendingReceipts(),[]);
+ assert.throws(()=>store.pendingReceipts({limit:0}),/invalid_structured_receipt_limit/);
+ store.close();
+});

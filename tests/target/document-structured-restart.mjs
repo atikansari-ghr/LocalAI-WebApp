@@ -20,16 +20,21 @@ try{
  const vault=initializeVault(join(directory,'master.key'),{encryptedStateExists:false});
  store=openStructuredJobStore(join(directory,'jobs.sqlite'),{vault});
  const job=store.enqueue({namespace:'user:proof',scope:'private',idempotencyKey:'native_restart_12345',report,schema,expiresAt:Date.now()+86400000});
+ const pending=store.enqueue({namespace:'user:proof',scope:'private',idempotencyKey:'native_pending_12345',report,schema,expiresAt:Date.now()+86400000});
  const receipt={id:job.id,namespace:'user:proof',scope:'private',claimCapability:job.claimCapability};
  store.close();store=null;
  try{execFileSync(process.execPath,[fileURLToPath(new URL('./document-structured-restart-child.mjs',import.meta.url)),directory],{encoding:'utf8',timeout:15000,env:{...process.env,TARGET_STRUCTURED_PROOF_RECEIPT:JSON.stringify(receipt)}});assert.fail('child did not stop abruptly');}
  catch(error){assert.equal(error.signal,'SIGKILL');}
  store=openStructuredJobStore(join(directory,'jobs.sqlite'),{vault:openVault(join(directory,'master.key'))});
  assert.equal(store.claimOwned(receipt),null);assert.equal(store.get(job.id,'user:proof','private').status,'running');
+ const recovered=store.pendingReceipts();assert.deepEqual(recovered,[{id:pending.id,namespace:'user:proof',scope:'private',claimCapability:pending.claimCapability}]);
  assert.throws(()=>store.recoverInterrupted(),/interactive_recovery_required/);
  assert.equal(store.recoverInterrupted({interactiveRecoveryConfirmed:true}),1);
  assert.equal(store.get(job.id,'user:proof','private').status,'failed');
  assert.equal(store.result(job.id,'user:proof','private'),null);
+ const resumed=store.claimOwned(recovered[0]);assert.equal(resumed.report.units[0].text,'Private invoice INV-42');
+ store.complete(resumed.id,resumed.token,'{"fields":{"invoice":[{"value":"INV-42","evidenceIds":["u0001"]}]}}');
+ assert.equal(store.result(pending.id,'user:proof','private').fields.invoice.value,'INV-42');
  assert.deepEqual({gateway:show('localai.service'),chat:show('localai-chat.service'),embedding:show('localai-embedding.service'),packages:digest()},before);
- process.stdout.write(JSON.stringify({gate:'native-structured-job-restart',claimPersisted:true,lateReplayBlocked:true,explicitRecoveryRequired:true,liveServicesAndPackagesUnchanged:true,activated:false})+'\n');
+ process.stdout.write(JSON.stringify({gate:'native-structured-job-restart',claimPersisted:true,lateReplayBlocked:true,explicitRecoveryRequired:true,pendingReceiptRecovered:true,liveServicesAndPackagesUnchanged:true,activated:false})+'\n');
 }finally{store?.close();rmSync(directory,{recursive:true,force:true});}
