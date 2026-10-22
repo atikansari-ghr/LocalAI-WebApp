@@ -1,0 +1,2 @@
+# Test fixture writer only, never installed by the application.
+xlwt==1.3.0 --hash=sha256:a082260524678ba48a297d922cc385f58278b8aa68741596a87de01a9c628b2e

@@ -1,3 +1,4 @@
+import {AdmissionError} from '../resources/admission.mjs';
 export class InferenceError extends Error{
  constructor(code,status=400){super(code);this.code=code;this.status=status;}
 }
@@ -57,7 +58,7 @@ async function relayStream(response,onChunk,signal,model){
   pending+=decoder.decode();if(!complete||pending.trim())fail('incomplete_worker_stream',502);
  }finally{await reader.cancel().catch(()=>{});reader.releaseLock();}
 }
-export function createInferenceClient({key,chatEndpoint='unix:/run/localai-chat/inference.sock',embeddingEndpoint='unix:/run/localai-embedding/inference.sock',timeoutMs=120000,mode='balanced',resources=readMemoryBudget,fallbackEnabled=false,onFallback,now=Date.now}={}){
+export function createInferenceClient({key,chatEndpoint='unix:/run/localai-chat/inference.sock',embeddingEndpoint='unix:/run/localai-embedding/inference.sock',timeoutMs=120000,mode='balanced',resources=readMemoryBudget,fallbackEnabled=false,onFallback,now=Date.now,admission}={}){
  if(typeof key!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(key))throw new TypeError('Internal worker credential required');
  const chatBase=endpoint(chatEndpoint),embeddingBase=endpoint(embeddingEndpoint);
  if(!Number.isSafeInteger(timeoutMs)||timeoutMs<100||timeoutMs>120000)throw new TypeError('Invalid inference deadline');
@@ -65,16 +66,18 @@ export function createInferenceClient({key,chatEndpoint='unix:/run/localai-chat/
  if(typeof resources!=='function')throw new TypeError('Resource measurements required');
  if(typeof fallbackEnabled!=='boolean'||typeof now!=='function'||(fallbackEnabled&&typeof onFallback!=='function'))throw new TypeError('Enabled fallback requires qualification and an audit callback');
  const policy=()=>{try{return selectResourceProfile(mode,resources());}catch(error){fail(error.message==='resource_pressure'?'resource_pressure':'resource_measurement_unavailable',503);}};
+ if(admission!==undefined&&(!admission||typeof admission.runInteractive!=='function'))throw new TypeError('Invalid shared admission');
  let busy=false;
  let primaryFailures=0,primaryRetryAt=0;
  async function admitted(work,signal){
   if(busy)fail('inference_busy',429);busy=true;
   const controller=new AbortController(),combined=AbortSignal.any([controller.signal,AbortSignal.timeout(timeoutMs),...(signal?[signal]:[])]);
-  try{return await work(combined);}
+  try{return await (admission?admission.runInteractive(leaseSignal=>work(AbortSignal.any([combined,leaseSignal])),{signal:combined}):work(combined));}
   catch(error){
    if(error instanceof InferenceError)throw error;
    if(signal?.aborted)throw signal.reason;
    if(combined.aborted)fail('inference_timeout',504);
+   if(error instanceof AdmissionError)fail(error.code,error.code==='admission_queue_full'?429:503);
    fail('worker_unavailable',502);
   }finally{controller.abort();busy=false;}
  }
@@ -100,12 +103,13 @@ export function createInferenceClient({key,chatEndpoint='unix:/run/localai-chat/
    if(!Array.isArray(input.messages)||input.messages.length<1||input.messages.length>64)fail('invalid_messages');
    let length=0;const messages=input.messages.map(message=>{fields(message,['role','content']);if(!['system','user','assistant'].includes(message.role))fail('invalid_role');const content=text(message.content);length+=content.length;return {role:message.role,content};});
    if(length>32768)fail('invalid_input');
-   const initialPolicy=policy(),max=input.max_tokens??Math.min(256,initialPolicy.maxOutputTokens),temperature=input.temperature??0.7,topP=input.top_p??0.9;
-   if(!Number.isInteger(max)||max<1||max>initialPolicy.maxOutputTokens||!Number.isFinite(temperature)||temperature<0||temperature>2||!Number.isFinite(topP)||topP<=0||topP>1)fail('invalid_generation_limits');
+   const requestedMax=input.max_tokens,temperature=input.temperature??0.7,topP=input.top_p??0.9;
+   if(requestedMax!==undefined&&(!Number.isInteger(requestedMax)||requestedMax<1||requestedMax>1024)||!Number.isFinite(temperature)||temperature<0||temperature>2||!Number.isFinite(topP)||topP<=0||topP>1)fail('invalid_generation_limits');
    if(input.stream!==undefined&&typeof input.stream!=='boolean')fail('invalid_stream');
    if(input.stream&&typeof onChunk!=='function')fail('stream_consumer_required');
    const callerSignal=signal;
    return admitted(async signal=>{
+    const initialPolicy=policy(),max=requestedMax??Math.min(256,initialPolicy.maxOutputTokens);if(max>initialPolicy.maxOutputTokens)fail('invalid_generation_limits');
     let delivered=false;
     const runModel=async model=>{
     const formatted=await boundedJson(await post(chatBase,'/apply-template',{model,messages,add_generation_prompt:true,chat_template_kwargs:{enable_thinking:false}},signal));

@@ -1,0 +1,102 @@
+{
+  "openapi": "3.1.2",
+  "info": {
+    "title": "Local AI document API candidate",
+    "version": "0.1.0-draft",
+    "description": "Phase-4 contract before implementation. These document operations are not enabled on the deployed gateway. Browser calls require an active session, exact HTTPS origin and CSRF header; application calls require a scoped capability, approved IP and no session cookie. No caller URL, filesystem path, executable or model path is accepted."
+  },
+  "servers": [{"url": "https://localai.ansariz.biz"}],
+  "tags": [{"name": "Documents", "description": "Planned, not deployed"}],
+  "x-localai-availability": "planned-disabled",
+  "paths": {
+    "/v1/ocr": {
+      "post": {
+        "tags": ["Documents"], "operationId": "submitOcr", "summary": "Submit a bounded local OCR job",
+        "x-localai-capability": "ocr",
+        "parameters": [{"$ref": "#/components/parameters/IdempotencyKey"}, {"$ref": "#/components/parameters/Origin"}, {"$ref": "#/components/parameters/Csrf"}],
+        "security": [{"bearer": []}, {"session": [], "csrf": []}],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DocumentSubmit"}}}},
+        "responses": {"202": {"description": "Durable job accepted or matching idempotent replay", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/JobReceipt"}}}}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/v1/extract": {
+      "post": {
+        "tags": ["Documents"], "operationId": "submitExtraction", "summary": "Submit bounded native parsing and optional OCR",
+        "x-localai-capability": "extract",
+        "parameters": [{"$ref": "#/components/parameters/IdempotencyKey"}, {"$ref": "#/components/parameters/Origin"}, {"$ref": "#/components/parameters/Csrf"}],
+        "security": [{"bearer": []}, {"session": [], "csrf": []}],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DocumentSubmit"}}}},
+        "responses": {"202": {"description": "Durable job accepted or matching idempotent replay", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/JobReceipt"}}}}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/v1/documents/{id}/status": {
+      "get": {
+        "tags": ["Documents"], "operationId": "readDocumentJob", "summary": "Read only an authorized job and its reviewable result",
+        "x-localai-capability": "document:read",
+        "parameters": [{"$ref": "#/components/parameters/JobId"}, {"$ref": "#/components/parameters/Scope"}],
+        "security": [{"bearer": []}, {"session": []}],
+        "responses": {"200": {"description": "Authorized job", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/JobStatus"}}}}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/v1/documents/{id}": {
+      "delete": {
+        "tags": ["Documents"], "operationId": "deleteDocumentJob", "summary": "Cancel and remove an authorized job after native cleanup",
+        "x-localai-capability": "document:delete",
+        "parameters": [{"$ref": "#/components/parameters/JobId"}, {"$ref": "#/components/parameters/Scope"}, {"$ref": "#/components/parameters/Origin"}, {"$ref": "#/components/parameters/Csrf"}],
+        "security": [{"bearer": []}, {"session": [], "csrf": []}],
+        "responses": {"202": {"description": "Cancellation accepted; cleanup and deletion pending"}, "204": {"description": "Deleted after cleanup"}, "default": {"$ref": "#/components/responses/Error"}}
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearer": {"type": "http", "scheme": "bearer", "bearerFormat": "application API key", "description": "Key capability, IP and scope are checked for every request."},
+      "session": {"type": "apiKey", "in": "cookie", "name": "__Host-localai-session", "description": "Secure first-party browser session."},
+      "csrf": {"type": "apiKey", "in": "header", "name": "x-csrf-token", "description": "Required with the browser session on mutations; browser origin must also match exactly."}
+    },
+    "parameters": {
+      "JobId": {"name": "id", "in": "path", "required": true, "schema": {"type": "string", "format": "uuid"}},
+      "Scope": {"name": "scope", "in": "query", "required": true, "schema": {"type": "string", "pattern": "^[-a-zA-Z0-9_.:]{1,128}$"}, "description": "Application access scope bound at submission; browser access is additionally bound to the submitting user."},
+      "IdempotencyKey": {"name": "Idempotency-Key", "in": "header", "required": true, "schema": {"type": "string", "pattern": "^[A-Za-z0-9_-]{16,128}$"}, "description": "Same principal, scope, operation and payload return the same job; a different payload under the key returns 409."},
+      "Origin": {"name": "Origin", "in": "header", "required": false, "schema": {"type": "string", "format": "uri"}, "description": "Mandatory on browser mutations and must equal the configured HTTPS origin. Foreign origins are rejected for application calls too."},
+      "Csrf": {"name": "x-csrf-token", "in": "header", "required": false, "schema": {"type": "string"}, "description": "Mandatory on browser mutations; bearer callers must not send a browser session cookie."}
+    },
+    "schemas": {
+      "DocumentSubmit": {
+        "type": "object", "additionalProperties": false, "required": ["name", "mime", "content_base64", "scope"],
+        "properties": {
+          "name": {"type": "string", "minLength": 1, "maxLength": 255},
+          "mime": {"type": "string", "minLength": 3, "maxLength": 128},
+          "content_base64": {"type": "string", "contentEncoding": "base64", "maxLength": 13981016, "description": "Decoded bytes must be 1 to 10 MiB; MIME, extension, magic and structure are independently verified."},
+          "scope": {"type": "string", "pattern": "^[-a-zA-Z0-9_.:]{1,128}$"},
+          "ocr": {"type": "string", "enum": ["auto", "off", "all"], "default": "auto"},
+          "language": {"type": "string", "enum": ["auto", "en", "ar"], "default": "auto"}
+        }
+      },
+      "JobReceipt": {
+        "type": "object", "additionalProperties": false, "required": ["id", "status", "status_url", "expires_at"],
+        "properties": {"id": {"type": "string", "format": "uuid"}, "status": {"type": "string", "enum": ["queued", "running", "cancelling", "complete", "failed", "cancelled"]}, "status_url": {"type": "string", "format": "uri-reference"}, "expires_at": {"type": "integer"}}
+      },
+      "JobStatus": {
+        "type": "object", "additionalProperties": false, "required": ["id", "status", "created_at", "expires_at"],
+        "properties": {
+          "id": {"type": "string", "format": "uuid"}, "status": {"type": "string", "enum": ["queued", "running", "cancelling", "complete", "failed", "cancelled"]},
+          "created_at": {"type": "integer"}, "expires_at": {"type": "integer"}, "error_code": {"type": ["string", "null"]},
+          "result": {"$ref": "#/components/schemas/DocumentResult"}
+        }
+      },
+      "DocumentResult": {
+        "type": "object", "additionalProperties": true,
+        "required": ["text", "manualReviewRequired"],
+        "properties": {
+          "text": {"type": "string", "maxLength": 1048576},
+          "manualReviewRequired": {"type": "boolean"},
+          "pages": {"type": "array", "maxItems": 100, "items": {"type": "object", "additionalProperties": true, "description": "Original one-based page identity, native text and OCR attempts, normalized-pixel coordinates and source hashes remain distinct."}},
+          "warnings": {"type": "array", "items": {"type": "string"}}
+        }
+      },
+      "ApiError": {"type": "object", "additionalProperties": false, "required": ["error"], "properties": {"error": {"type": "string"}}}
+    },
+    "responses": {"Error": {"description": "400 invalid input, 401 unauthenticated, 403 forbidden, 404 absent or inaccessible, 409 idempotency conflict, 413 oversized, 429 queue full, 503 pressure or unqualified worker", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ApiError"}}}}}
+  }
+}

@@ -1,15 +1,17 @@
 # Installation and recovery
 
-This is a development foundation, not a usable AI platform or production release. There is no supported one-line stable installer yet. No models, Qdrant, accounts or browser setup are installed by this phase.
+The native private preview includes browser setup/authentication and a separately qualified local CPU chat/embedding runtime. The full platform and production release remain gated; OCR/parsing is under development and Qdrant/RAG is not installed. See [phase3 deployment evidence](verification/phase-3-activation-2026-10-18.md) and the [progress ledger](progress.md). There is no supported one-line stable installer yet.
 
 ## Development
 Install Node.js 24.19.0 from the official distribution, then run:
 ```sh
+npm ci --ignore-scripts
+npm ci --ignore-scripts --prefix services/documents/parsers
 npm test
 npm run check:docs
 npm start
 ```
-For the security development branch, run `npm ci --ignore-scripts` before testing to install the locked WebAuthn dependency graph. The gateway binds 127.0.0.1:1234 and writes private SQLite state under .localai. It exposes GET /health/live and GET /health/ready only. Readiness intentionally returns 503 until the remaining platform is implemented. No unauthenticated Admin or Workspace UI is served.
+The separate parser cohort installs only locked pure-JavaScript parsing dependencies; native OCR candidate dependencies are not installed by these commands. By default the development gateway binds127.0.0.1:1234, writes private SQLite state under .localai and exposes health endpoints. Secure browser/API transport requires the explicit TLS/proxy configuration below. Readiness intentionally stays503 with release_not_qualified while the full platform is incomplete.
 
 ## Debian foundation evaluation
 Use a disposable Debian 13 Proxmox LXC with 4 vCPU, 6 GB RAM and 100 GB disk; root, running systemd and Git are required. Clone and inspect the intended feature commit before executing:

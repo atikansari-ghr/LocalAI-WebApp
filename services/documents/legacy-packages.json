@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "status": "candidate-not-qualified",
+  "platform": "debian13-amd64",
+  "source": "https://packages.debian.org/trixie/catdoc",
+  "packages": [
+    {
+      "file": "catdoc_1%3a0.95-6_amd64.deb",
+      "package": "catdoc",
+      "version": "1:0.95-6",
+      "architecture": "amd64",
+      "bytes": 86248,
+      "sha256": "cfb17caf1eef552c4a56b34c7ea6d79cfcee5c49f93303a65720f9f336c054f7",
+      "licenseFile": "usr/share/doc/catdoc/copyright"
+    },
+    {
+      "file": "unrtf_0.21.10-clean-1_amd64.deb",
+      "package": "unrtf",
+      "version": "0.21.10-clean-1",
+      "architecture": "amd64",
+      "bytes": 50668,
+      "sha256": "e98dbebef001e9d6a22ef5240a97382329ff13dd8cf86b264eaed189b6aa0a4c",
+      "licenseFile": "usr/share/doc/unrtf/copyright"
+    }
+  ]
+}

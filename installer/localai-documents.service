@@ -1,0 +1,36 @@
+[Unit]
+Description=Local AI private document supervisor candidate
+After=localai.service
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=exec
+User=root
+Group=localai
+WorkingDirectory=/opt/localai/current
+ExecStart=/opt/localai/node/bin/node /opt/localai/current/services/documents/supervisor-main.mjs
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=180
+UMask=0077
+StateDirectory=localai-documents
+StateDirectoryMode=0700
+RuntimeDirectory=localai-documents
+RuntimeDirectoryMode=0750
+PrivateNetwork=yes
+PrivateDevices=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+NoNewPrivileges=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_UNIX
+InaccessiblePaths=/var/lib/localai /var/lib/localai-models /opt/localai/ai /etc/localai /run/credentials
+MemoryMax=256M
+MemorySwapMax=0
+CPUQuota=100%
+TasksMax=32
+
+[Install]
+WantedBy=multi-user.target

@@ -33,6 +33,10 @@ test('vault survives reopening and binds encrypted secrets to their purpose',t=>
  assert.throws(()=>vault.open(encrypted,'totp:user2'));
  const parts=encrypted.split('.');parts[2]=Buffer.from('tampered').toString('base64url');
  assert.throws(()=>vault.open(parts.join('.'),'totp:user1'));
+ const fingerprint=vault.digest('private document hash','document-request-v1');
+ assert.equal(openVault(path).digest('private document hash','document-request-v1'),fingerprint);
+ assert.notEqual(vault.digest('private document hash','other-purpose'),fingerprint);
+ assert.notEqual(fingerprint,Buffer.from('private document hash').toString('hex'));
  assert.equal(readFileSync(path).length,32);
 });
 test('opening a vault with a missing master key requires recovery and never silently rekeys it',t=>{

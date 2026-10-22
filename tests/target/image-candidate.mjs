@@ -1,0 +1,19 @@
+import assert from 'node:assert/strict';
+import {readFile,readdir,access,mkdtemp,writeFile,rm} from 'node:fs/promises';
+import {constants} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {runDocumentTool} from '../../services/documents/tool-process.mjs';
+import {createImageNormalizer} from '../../services/documents/images.mjs';
+assert.equal(process.env.TARGET_TEST_LXC,'disposable');assert.notEqual(process.getuid(),0);for(const path of ['/var/lib/localai','/var/lib/localai-models','/opt/localai/ai','/etc/localai'])await assert.rejects(access(path,constants.R_OK|constants.X_OK));
+const worker=new URL('../../services/documents/workers/image-worker.py',import.meta.url).pathname,normalize=createImageNormalizer({python:'/opt/localai/ocr/candidates/paddleocr-3.7.0/venv/bin/python',worker}),files=new URL('../fixtures/documents/',import.meta.url),load=async name=>({name,bytes:await readFile(new URL(name,files))}),before=(await readdir(tmpdir())).filter(n=>n.startsWith('localai-image-')),results=[];
+for(const name of ['english.png','english.jpg','english.webp','two-pages.tiff','oriented.jpg','oriented.tiff']){const result=await normalize(await load(name));assert.equal(result.pages.length,['two-pages.tiff','oriented.tiff'].includes(name)?2:1);assert.deepEqual([result.pages[0].width,result.pages[0].height],['oriented.jpg','oriented.tiff'].includes(name)?[140,900]:[900,140]);if(name==='oriented.tiff'){assert.deepEqual(result.pages.map(p=>p.source.orientation),[6,8]);assert.ok(result.pages.every(p=>p.source.originalSize[0]===900&&p.source.originalSize[1]===140));}results.push({name,pages:result.pages.map(p=>({width:p.width,height:p.height,orientation:p.source.orientation,bytes:p.bytes.length,sha256:p.sha256}))});}
+const extraDirectory=await mkdtemp(tmpdir()+'/localai-image-extra-');
+try{
+ const large=await normalize(await load('large.png'));assert.deepEqual([large.pages[0].width,large.pages[0].height],[2000,311]);
+ const alpha=await normalize(await load('transparent.png')),oriented=await normalize(await load('oriented.tiff'));
+ for(const [index,page]of [alpha.pages[0],...oriented.pages].entries())await writeFile(extraDirectory+'/'+index+'.png',page.bytes);
+ const script='import json,sys;from PIL import Image;from pathlib import Path;p=Path(sys.argv[1]);base=Path(sys.argv[2]);a=Image.open(p/"0.png");assert a.mode=="RGB" and a.getpixel((0,0))==(255,255,255);assert "exif" not in a.info;spec=[("english.png",Image.Transpose.ROTATE_270),("arabic.png",Image.Transpose.ROTATE_90)];[(lambda out,ref: (out.size==ref.size and out.tobytes()==ref.tobytes()) or (_ for _ in ()).throw(AssertionError("orientation pixels")))(Image.open(p/(str(i+1)+".png")),Image.open(base/name).convert("RGB").transpose(rotation)) for i,(name,rotation) in enumerate(spec)];print("pixel-properties-pass")';
+ const proof=await runDocumentTool('/opt/localai/ocr/candidates/paddleocr-3.7.0/venv/bin/python',['-I','-c',script,extraDirectory,files.pathname]);assert.equal(proof.code,0);assert.equal(proof.stdout.toString().trim(),'pixel-properties-pass');
+}finally{await rm(extraDirectory,{recursive:true,force:true});}await assert.rejects(normalize(await load('oversized.png')),/image_pixel_limit/);await assert.rejects(normalize(await load('corrupt.png')),/invalid_image/);await assert.rejects(normalize(await load('english.png'),{signal:AbortSignal.abort()}),/cancelled/);assert.deepEqual((await readdir(tmpdir())).filter(n=>n.startsWith('localai-image-')),before);
+const group=(await readFile('/proc/self/cgroup','utf8')).trim().split('::')[1],path='/sys/fs/cgroup'+group,memory={peak:Number(await readFile(path+'/memory.peak','utf8')),swapPeak:Number(await readFile(path+'/memory.swap.peak','utf8'))};assert.equal(memory.swapPeak,0);
+console.log(JSON.stringify({gate:'private-image-candidate',pillow:'13.0.0',results,memory,activated:false,fullPhaseGate:'blocked'}));

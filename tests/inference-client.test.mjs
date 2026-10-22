@@ -154,3 +154,16 @@ test('health checks verify both private workers without taking the generation sl
  const client=createInferenceClient({key:'a'.repeat(43),chatEndpoint:endpoint,embeddingEndpoint:endpoint});assert.equal(await client.health(),true);assert.equal(client.busy,false);
  healthy=false;assert.equal(await client.health(),false);assert.equal(client.busy,false);
 });
+
+test('inference shares interactive admission and cannot reach a worker before background cleanup',async t=>{
+ const {createResourceAdmission}=await import('../services/resources/admission.mjs');const admission=createResourceAdmission({resources:()=>({availableBytes:2*1024**3,swapUsedBytes:0,memoryPressure:0})});let release;const cleanup=new Promise(resolve=>release=resolve),events=[];
+ const background=admission.runBackground(async signal=>{await new Promise(resolve=>signal.addEventListener('abort',resolve,{once:true}));events.push('abort');await cleanup;events.push('clean');});const rejected=assert.rejects(background,/background_preempted/);
+ const endpoint=await fixture(t,(req,res)=>{events.push('request');res.end(JSON.stringify(req.url==='/apply-template'?{prompt:'hi'}:req.url==='/tokenize'?{tokens:[1]}:{choices:[{message:{content:'ok'}}]}));});const client=createInferenceClient({key:'a'.repeat(43),chatEndpoint:endpoint,admission}),chat=client.chat({messages:[{role:'user',content:'hello'}]});await new Promise(resolve=>setTimeout(resolve,20));assert.deepEqual(events,['abort']);release();assert.equal((await chat).choices[0].message.content,'ok');await rejected;assert.deepEqual(events.slice(0,2),['abort','clean']);assert.equal(client.busy,false);
+});
+
+test('chat preempts document pressure before measuring model budget and choosing default output tokens',async t=>{
+ const {createResourceAdmission}=await import('../services/resources/admission.mjs');const admission=createResourceAdmission({resources:()=>({availableBytes:2*1024**3,swapUsedBytes:0,memoryPressure:0})});let release;const cleanup=new Promise(resolve=>release=resolve),events=[];
+ const background=admission.runBackground(async signal=>{events.push('background');await new Promise(resolve=>signal.addEventListener('abort',resolve,{once:true}));events.push('abort');await cleanup;events.push('clean');});const rejection=assert.rejects(background,/background_preempted/);
+ const endpoint=await fixture(t,(req,res)=>{events.push('request');res.end(JSON.stringify(req.url==='/apply-template'?{prompt:'hi'}:req.url==='/tokenize'?{tokens:[1]}:{choices:[{message:{content:'ok'}}]}));});
+ const client=createInferenceClient({key:'a'.repeat(43),chatEndpoint:endpoint,admission,resources:()=>({availableBytes:admission.snapshot().active==='background'?256*1024**2:2*1024**3})});const chat=client.chat({messages:[{role:'user',content:'hello'}]});await new Promise(resolve=>setTimeout(resolve,20));assert.deepEqual(events,['background','abort']);release();assert.equal((await chat).choices[0].message.content,'ok');await rejection;assert.equal(events.indexOf('clean')<events.indexOf('request'),true);
+});
