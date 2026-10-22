@@ -56,3 +56,20 @@ test('aborting an active model request retains the claim for explicit recovery',
  assert.equal(store.get(job.id,'user:one','private').status,'running');
  await assert.rejects(runner.step(),/structured_recovery_required/);
 });
+
+test('private runner serializes an asynchronous remote claim and completion',async()=>{
+ const calls=[];let available=true;
+ const store={claim:async()=>{calls.push('claim');if(!available)return null;available=false;return {id:'job',token:'token',report,schema};},complete:async()=>{calls.push('complete');return {id:'job',status:'complete'};}};
+ const runner=createStructuredJobRunner({store,barrier:{isClear:()=>true},generateCandidate:async()=>{calls.push('model');return '{}';}});
+ const [first,second]=await Promise.all([runner.step(),runner.step()]);
+ assert.equal(first.status,'complete');assert.equal(second,null);assert.deepEqual(calls,['claim','model','complete','claim']);
+});
+
+test('cancellation during an asynchronous claim cannot reach model generation',async()=>{
+ let release,generated=false;const pending=new Promise(resolve=>{release=resolve;}),abort=new AbortController();
+ const runner=createStructuredJobRunner({store:{claim:()=>pending,complete:()=>{throw Error('unexpected_completion');}},barrier:{isClear:()=>true},generateCandidate:async()=>{generated=true;return '{}';}});
+ const step=runner.step({signal:abort.signal});await new Promise(resolve=>setImmediate(resolve));abort.abort();
+ release({id:'job',token:'token',report,schema});
+ await assert.rejects(step,{name:'AbortError'});assert.equal(generated,false);
+ await assert.rejects(runner.step(),/structured_recovery_required/);
+});

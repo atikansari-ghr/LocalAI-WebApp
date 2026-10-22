@@ -6,6 +6,8 @@
 
 **Supervisor boundary:** The inactive root document supervisor now owns this store and accepts scoped submission/status on its local Unix socket. Its systemd sandbox has no network or model-credential access. The source-only model runner therefore remains outside that service until a separately qualified inference bridge and crash-safe recovery contract exist. No public route is enabled.
 
+**Executor access decision:** A queue-wide claim operation on the group-accessible document socket would reveal the next owner's decrypted report and claim token to any `localai` process. The prototype was rejected in review and removed before commit. A future bridge must bind claims to an authorized job identity or use a separately protected executor capability, and must hold the interactive lease through model completion.
+
 ## Tasks
 
 - [x] RED→GREEN private durable queue: validate schema and parser/OCR evidence before enqueue, bind owner/scope/idempotency to the request, encrypt inputs and results, and reject incompatible existing database files.

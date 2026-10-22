@@ -20,11 +20,14 @@ export function createStructuredJobRunner({store,generateCandidate,barrier}={}){
    if(blocked)throw new Error('structured_recovery_required');
    if(!barrier.isClear())throw new Error('interactive_recovery_required');
    signal?.throwIfAborted();
-   const job=store.claim();if(!job)return null;
    try{
+    const job=await store.claim();if(!job)return null;
+    if(!barrier.isClear())throw new Error('interactive_recovery_required');
+    signal?.throwIfAborted();
     const modelText=await generateCandidate({report:job.report,schema:job.schema,signal:signal??new AbortController().signal});
     if(!barrier.isClear())throw new Error('interactive_recovery_required');
-    return store.complete(job.id,job.token,modelText);
+    signal?.throwIfAborted();
+    return await store.complete(job.id,job.token,modelText);
    }catch(error){blocked=true;throw error;}
   });
   tail=result.catch(()=>{});return result;
