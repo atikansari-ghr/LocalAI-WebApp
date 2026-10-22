@@ -12,6 +12,8 @@
 
 **Restart candidate:** The root-owned store can rederive bounded live queued receipts after reopening its existing vault; no enumeration operation is available on the group-accessible socket. A disposable child-SIGKILL proof reconstructed a second queued receipt while an interrupted running claim stayed protected. The protected handoff and systemd scheduling contract are still unimplemented.
 
+**Protected handoff candidate:** A separate receipt socket in a root-owned directory with mode 0750 and a dedicated executor group can disclose only one pending receipt at a time. The existing `localai` group socket has no receipt-enumeration command. A disposable Debian proof currently uses the `nobody` group solely as a stand-in for the future dedicated executor identity; the `localai` account was denied by the kernel's directory permissions. This source-only primitive is not wired to the supervisor or installer, and it does not start an executor.
+
 ## Tasks
 
 - [x] RED→GREEN private durable queue: validate schema and parser/OCR evidence before enqueue, bind owner/scope/idempotency to the request, encrypt inputs and results, and reject incompatible existing database files.
